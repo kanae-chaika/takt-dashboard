@@ -49,7 +49,27 @@ const EXTRA_ROOTS = (rootsSpec !== undefined ? rootsSpec.split(/[,:]/) : CONFIG.
 function listDirs(p) {
   try { return readdirSync(p).map((d) => path.join(p, d)).filter((d) => statSync(d).isDirectory()); } catch { return []; }
 }
-function findRuns() {
+// Web UI（takt ui）から起動した run は <repo>/.takt/runs ではなく ~/.takt/state/projects/<id>/runs に書かれる
+const UI_PROJECTS_DIR = path.join(HOME, '.takt', 'state', 'projects');
+// run ディレクトリ（meta.json のある場所）から run の記録を作る。一覧（findRuns）・?run= で一覧に無い run（zip で持ってきたもの等）・<run_dir> のどれもここを通し、
+// root と中断判定を揃える。meta.json が読めなければ throw する（呼び出し側で、一覧なら飛ばす・?run= なら見つからない扱い・起動時なら終了）
+function runRecord(dir, taskCache) {
+  const runDir = path.resolve(dir);
+  const meta = JSON.parse(readFileSync(path.join(runDir, 'meta.json'), 'utf8'));
+  const runsDir = path.dirname(runDir), projDir = path.dirname(runsDir);
+  if (path.basename(runsDir) === 'runs' && path.dirname(projDir) === UI_PROJECTS_DIR) {
+    // Web UI の run: root は state.json の canonicalDirectory（本体リポジトリ）にして、tasks.yaml の逆引きや repo 名の表示を CLI の run と揃える。
+    // tasks.yaml にはエントリが無いので、一覧のラベルは meta.task の先頭行（見出し）から取る。
+    let root = projDir;
+    try { root = JSON.parse(readFileSync(path.join(projDir, 'state.json'), 'utf8')).canonicalDirectory || projDir; } catch {}
+    const label = String(meta.task ?? '').split('\n').find((l) => l.trim())?.replace(/^#+\s*/, '') ?? null;
+    return { meta, root, runDir, label: label ? 'UI: ' + label : 'UI' };
+  }
+  const root = path.resolve(runDir, '..', '..', '..'); // <root>/.takt/runs/<run>
+  if (meta.status === 'running' && isRunInterrupted(root, meta, taskCache)) meta.status = 'interrupted';
+  return { meta, root, runDir };
+}
+function findRuns(taskCache) {
   const roots = new Set([process.cwd(), path.join(HOME, '.takt')]);
   for (const r of EXTRA_ROOTS) { roots.add(r); for (const d of listDirs(r)) roots.add(d); }
   // リポジトリから takt が作った worktree を辿る: .takt/clone-meta/*.json の clonePath と tasks.yaml の worktree_path。
@@ -62,35 +82,12 @@ function findRuns() {
     const ty = path.join(repo, '.takt', 'tasks.yaml');
     if (existsSync(ty)) for (const m of readFileSync(ty, 'utf8').matchAll(/^\s+worktree_path:\s*(\S+)/gm)) if (existsSync(m[1])) roots.add(m[1]);
   }
+  const runDirs = [...roots].flatMap((root) => listDirs(path.join(root, '.takt', 'runs')));
+  for (const projDir of listDirs(UI_PROJECTS_DIR)) runDirs.push(...listDirs(path.join(projDir, 'runs')));
   const runs = [];
-  const taskCache = new Map();
-  for (const root of roots) {
-    const runsDir = path.join(root, '.takt', 'runs');
-    for (const runDir of listDirs(runsDir)) {
-      const metaPath = path.join(runDir, 'meta.json');
-      if (!existsSync(metaPath)) continue;
-      try {
-        const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
-        if (meta.status === 'running' && isRunInterrupted(root, meta, taskCache)) meta.status = 'interrupted';
-        runs.push({ meta, root, runDir });
-      } catch {}
-    }
-  }
-  // Web UI（takt ui）から起動した run は <repo>/.takt/runs ではなく ~/.takt/state/projects/<id>/runs に書かれる。
-  // root は state.json の canonicalDirectory（本体リポジトリ）にして、tasks.yaml の逆引きや repo 名の表示を CLI の run と揃える。
-  // tasks.yaml にはエントリが無いので、一覧のラベルは meta.task の先頭行（見出し）から取る。
-  for (const projDir of listDirs(path.join(HOME, '.takt', 'state', 'projects'))) {
-    let root = projDir;
-    try { root = JSON.parse(readFileSync(path.join(projDir, 'state.json'), 'utf8')).canonicalDirectory || projDir; } catch {}
-    for (const runDir of listDirs(path.join(projDir, 'runs'))) {
-      const metaPath = path.join(runDir, 'meta.json');
-      if (!existsSync(metaPath)) continue;
-      try {
-        const meta = JSON.parse(readFileSync(metaPath, 'utf8'));
-        const label = String(meta.task ?? '').split('\n').find((l) => l.trim())?.replace(/^#+\s*/, '') ?? null;
-        runs.push({ meta, root, runDir, label: label ? 'UI: ' + label : 'UI' });
-      } catch {}
-    }
+  for (const runDir of runDirs) {
+    if (!existsSync(path.join(runDir, 'meta.json'))) continue;
+    try { runs.push(runRecord(runDir, taskCache)); } catch {}
   }
   return runs.sort((a, b) => {
     const ra = a.meta.status === 'running' ? 1 : 0, rb = b.meta.status === 'running' ? 1 : 0;
@@ -109,8 +106,7 @@ function isPidAlive(pid) {
 // run の meta.json が running のとき、対応するタスク（worktree_path が一致）が実行中でなければ中断扱い。
 // タスクが見つからない run（worktree 外の直接実行など）は判定できないので running のままにする。
 function isRunInterrupted(root, meta, cache) {
-  if (!cache.has(root)) cache.set(root, parseTasks(tasksYamlFor(root).text));
-  const t = cache.get(root).find((x) => x.worktree_path && x.worktree_path === root);
+  const t = taskForRoot(root, cache);
   if (!t) return false;
   if (t.status !== 'running') return true;
   return Boolean(t.run_slug) && t.run_slug !== meta.runSlug; // 同じ worktree で再実行中の場合、古い run は中断
@@ -468,35 +464,28 @@ function parseTasks(text) {
 }
 
 // ---------- state ----------
-// run ディレクトリ（meta.json のある場所）を直接読む。一覧に無い run（zip で持ってきたもの等）を ?run= や <run_dir> で開くときに使う
-function readRunDir(dir) {
-  const runDir = path.resolve(dir);
-  const meta = JSON.parse(readFileSync(path.join(runDir, 'meta.json'), 'utf8'));
-  return { meta, runDir, root: path.resolve(runDir, '..', '..', '..') };
-}
-function currentRun(sel) {
+// runs は findRuns() の結果（1 回の要求で 1 回だけ走査する）。taskCache は tasks.yaml のパース結果のキャッシュ（同じ要求の中で共有する）
+function currentRun(sel, runs, taskCache) {
   if (sel) {
-    const hit = findRuns().find((r) => r.runDir === sel);
+    const hit = runs.find((r) => r.runDir === sel);
     if (hit) return hit;
-    try { return readRunDir(sel); } catch {} // 一覧に無くても meta.json があれば開く
+    try { return runRecord(sel, taskCache); } catch {} // 一覧に無くても meta.json があれば開く
     return null; // 指定した run が無いときに別の run を返すと、URL と表示が食い違う。見つからなかったことは state() の runNotFound で返す
   }
-  if (FIXED_RUN) return readRunDir(FIXED_RUN);
-  return findRuns()[0] ?? null;
+  if (FIXED_RUN) return runRecord(FIXED_RUN, taskCache);
+  return runs[0] ?? null;
 }
 function taskForRoot(root, cache) {
   if (!cache.has(root)) cache.set(root, parseTasks(tasksYamlFor(root).text));
   return cache.get(root).find((t) => t.worktree_path && t.worktree_path === root) || null;
 }
 // 一覧は新しい 20 件。表示中の run がそれより古いときは先頭に足す（ドロップダウンに無いと別の run が選ばれて見える）
-function runList(active = null, limit = 20) {
-  const cache = new Map();
-  const all = findRuns();
+function runList(active, limit, all, taskCache) {
   const top = all.slice(0, limit);
   top.total = all.length;
   if (active && !top.some((r) => r.runDir === active.runDir)) { const me = all.find((r) => r.runDir === active.runDir) ?? active; top.unshift(me); }
   const list = top.map((r) => {
-    const t = taskForRoot(r.root, cache);
+    const t = taskForRoot(r.root, taskCache);
     return { runDir: r.runDir, status: r.meta.status, slug: r.meta.runSlug, step: r.meta.currentStep, updatedAt: r.meta.updatedAt, label: t ? (t.summary || t.name) : (r.label ?? null) };
   });
   list.total = all.length;
@@ -504,8 +493,10 @@ function runList(active = null, limit = 20) {
 }
 function state(sel, showAll = false) {
   const limit = showAll ? Infinity : 20;
-  const active = currentRun(sel);
-  if (!active) { const runs = runList(null, limit); return { active: null, runs, runsTotal: runs.total, ...(sel ? { runNotFound: sel } : {}) }; }
+  const taskCache = new Map();
+  const found = findRuns(taskCache);
+  const active = currentRun(sel, found, taskCache);
+  if (!active) { const runs = runList(null, limit, found, taskCache); return { active: null, runs, runsTotal: runs.total, ...(sel ? { runNotFound: sel } : {}) }; }
   const routing = routingFor(active.runDir, active.meta.startTime);
   const tl = timeline(active.runDir, routing);
   // 中断・失敗した run は、終わった時刻を最後の行にする。失敗は meta.endTime と meta.reason / meta.failure（例: rule_no_match）、
@@ -534,7 +525,7 @@ function state(sel, showAll = false) {
     tl.rows.push({ ts: m.endTime ?? m.updatedAt, kind: 'end', status: m.status, step, key: key ?? '', reason, judge: key ? tl.judges[key] : null });
   }
   const tasks = tasksYamlFor(active.root);
-  const runs = runList(active, limit);
+  const runs = runList(active, limit, found, taskCache);
   return {
     runs, runsTotal: runs.total,
     active: { meta: active.meta, runDir: active.runDir, root: active.root, reports: tl.unmatched, maxSteps: maxStepsFor(active.meta.workflow, active.root) },
@@ -543,11 +534,12 @@ function state(sel, showAll = false) {
     tasksPath: tasks.path,
     // リポジトリ名: tasks.yaml の置き場（<repo>/.takt/tasks.yaml）から取る。取れなければ run のルートのディレクトリ名
     repo: path.basename(tasks.path ? path.resolve(tasks.path, '..', '..') : active.root),
-    currentTask: parseTasks(tasks.text).find((t) => t.worktree_path && t.worktree_path === active.root) || null, // worktree が一致するエントリだけ。無ければ「キューなし」
+    currentTask: taskForRoot(active.root, taskCache), // worktree が一致するエントリだけ。無ければ「キューなし」
   };
 }
 function reportText(rel, sel) {
-  const active = currentRun(sel);
+  const taskCache = new Map();
+  const active = currentRun(sel, findRuns(taskCache), taskCache);
   if (!active) return null;
   const base = path.join(active.runDir, 'reports');
   const p = path.resolve(base, rel);
@@ -941,7 +933,7 @@ tick(); setInterval(tick, 2000);
 
 // <run_dir> 固定のときは listen 前に meta.json を読めるか確かめる（読めないまま起動すると最初の /api/state で落ちるため）
 if (FIXED_RUN) {
-  try { readRunDir(FIXED_RUN); }
+  try { runRecord(FIXED_RUN, new Map()); }
   catch (e) {
     // stderr がパイプだと console.error は非同期で、直後の process.exit で消えることがあるので同期で書く
     writeSync(2, 'takt-dashboard: ' + path.join(path.resolve(FIXED_RUN), 'meta.json') + ' を読めません: ' + e.message + '\n');
