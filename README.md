@@ -29,8 +29,8 @@ takt-dashboard           # → http://localhost:7331
 
 | オプション | 説明 |
 |---|---|
-| `--roots ~/dev,~/projects` | 複数のリポジトリをまとめて見たいとき。リポジトリをまとめて置いているディレクトリを指定すると、その直下のリポジトリと worktree の `.takt/runs` を見る。カンマ区切りで複数指定も可能。環境変数 `TAKT_DASHBOARD_ROOTS` でも可 |
-| `--port N` | ポート（既定 7331）。環境変数 `TAKT_DASHBOARD_PORT` でも可 |
+| `--roots ~/dev,~/projects` | 複数のリポジトリをまとめて見たいとき。リポジトリをまとめて置いているディレクトリを指定すると、その直下のリポジトリと worktree の `.takt/runs` を見る。カンマ区切りで複数指定できる。環境変数 `TAKT_DASHBOARD_ROOTS` でも指定できる |
+| `--port N` | ポート（既定 7331）。環境変数 `TAKT_DASHBOARD_PORT` でも指定できる |
 | `<run_dir>` | 表示する run ディレクトリを固定 |
 
 毎回オプションを付けたくなければ、設定ファイルに書けます（コマンドライン > 環境変数 > 設定ファイル > 既定の順で優先）。
