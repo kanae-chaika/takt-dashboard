@@ -521,6 +521,9 @@ function state(sel, showAll = false) {
     // 同じステップの前の iteration の判定を付けないよう、その step の最後の開始行の key に限る
     const lastStart = [...tl.rows].reverse().find((r) => (r.kind === 'step' || r.kind === 'sub') && r.step === step);
     const key = lastStart && tl.judges[lastStart.key] ? lastStart.key : null;
+    // 直前の「■ step → error」行と同じ失敗なので、エラーのリンクは失敗行だけに出す（同じ内容が 2 行に並ばないように）
+    const prev = tl.rows[tl.rows.length - 1];
+    if (prev && prev.kind === 'done' && lastStart && prev.key === lastStart.key && prev.status !== 'done') delete prev.errors;
     tl.rows.push({ ts: m.endTime ?? m.updatedAt, kind: 'end', status: m.status, step, key: key ?? '', reason: m.reason ?? m.failure?.error ?? '', judge: key ? tl.judges[key] : null, errors: lastStart ? (tl.errors[lastStart.key] ?? null) : null });
   }
   const tasks = tasksYamlFor(active.root);
