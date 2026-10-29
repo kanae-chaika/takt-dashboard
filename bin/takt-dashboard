@@ -26,6 +26,16 @@ function listDirs(p) {
 function findRuns() {
   const roots = new Set([process.cwd(), path.join(HOME, '.takt')]);
   for (const r of EXTRA_ROOTS) { roots.add(r); for (const d of listDirs(r)) roots.add(d); }
+  // リポジトリから takt が作った worktree を辿る: .takt/clone-meta/*.json の clonePath と tasks.yaml の worktree_path。
+  // takt の既定では worktree はリポジトリの隣（../<clone-name>）に作られるので、リポジトリで起動すれば --roots 無しで見つかる
+  for (const repo of [...roots]) {
+    const metaDir = path.join(repo, '.takt', 'clone-meta');
+    for (const f of (existsSync(metaDir) ? readdirSync(metaDir) : [])) {
+      try { const cp = JSON.parse(readFileSync(path.join(metaDir, f), 'utf8')).clonePath; if (cp && existsSync(cp)) roots.add(cp); } catch {}
+    }
+    const ty = path.join(repo, '.takt', 'tasks.yaml');
+    if (existsSync(ty)) for (const m of readFileSync(ty, 'utf8').matchAll(/^\s+worktree_path:\s*(\S+)/gm)) if (existsSync(m[1])) roots.add(m[1]);
+  }
   const runs = [];
   const taskCache = new Map();
   for (const root of roots) {

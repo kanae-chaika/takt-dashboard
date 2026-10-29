@@ -19,20 +19,20 @@
 ## 使い方
 
 ```bash
-# 依存なし。リポジトリを clone して直接実行
+# 依存なし。clone して、takt を使っているリポジトリの中から実行する
 git clone https://github.com/kanae-chaika/takt-dashboard.git
-cd takt-dashboard
-node bin/takt-dashboard --roots ~/git,~/git/takt-worktrees
+cd /path/to/your-repo
+node /path/to/takt-dashboard/bin/takt-dashboard
 # → http://localhost:7331
 ```
 
+リポジトリで起動すると、そのリポジトリの `.takt/clone-meta/` と `.takt/tasks.yaml` から takt が作った worktree を辿って、run をまとめて一覧にします。`~/.takt`（`takt ui` から起動した run）も見ます。
+
 | オプション | 説明 |
 |---|---|
-| `--roots a,b` | run を探すディレクトリ。指定したディレクトリと、その直下のディレクトリ（リポジトリ・worktree）の `.takt/runs` を見る。環境変数 `TAKT_DASHBOARD_ROOTS` でも可 |
+| `--roots a,b` | 複数のリポジトリをまとめて見たいとき。指定したディレクトリと、その直下のディレクトリの `.takt/runs` を見る。環境変数 `TAKT_DASHBOARD_ROOTS` でも可 |
 | `--port N` | ポート（既定 7331） |
 | `<run_dir>` | 表示する run ディレクトリを固定 |
-
-カレントディレクトリと `~/.takt`（`takt ui` から起動した run）は指定しなくても見ます。
 
 ## 過去の run の provider / model を正しく出すために
 
@@ -79,17 +79,17 @@ A local web dashboard for watching [TAKT](https://github.com/nrslib/takt) runs. 
 
 ```bash
 git clone https://github.com/kanae-chaika/takt-dashboard.git
-cd takt-dashboard
-node bin/takt-dashboard --roots ~/git,~/git/takt-worktrees   # → http://localhost:7331
+cd /path/to/your-repo                       # a repository where you use takt
+node /path/to/takt-dashboard/bin/takt-dashboard   # → http://localhost:7331
 ```
+
+Started inside a repository, it follows the worktrees takt created (from `.takt/clone-meta/` and `.takt/tasks.yaml`) and lists all their runs, plus runs under `~/.takt` (started from `takt ui`).
 
 | Option | Description |
 |---|---|
-| `--roots a,b` | Directories to scan: each one and its immediate subdirectories are checked for `.takt/runs`. Also `TAKT_DASHBOARD_ROOTS` |
+| `--roots a,b` | To watch several repositories at once: each directory and its immediate subdirectories are checked for `.takt/runs`. Also `TAKT_DASHBOARD_ROOTS` |
 | `--port N` | Port (default 7331) |
 | `<run_dir>` | Pin a specific run directory |
-
-The current directory and `~/.takt` (runs started from `takt ui`) are always scanned.
 
 **Caveats**: TAKT's run log format is experimental and may change; verified against takt 0.73.0. Run data lives in each worktree's `.takt/runs/`, so deleting a task in `takt list` removes it from the dashboard too. Binds to localhost only, no authentication.
 
