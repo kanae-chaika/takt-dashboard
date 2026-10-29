@@ -5,6 +5,10 @@
 
 [English](#english) is below.
 
+![完了した run: plan → write_tests → implement → 並列レビュー → 裁定 → final-gate](docs/screenshot-completed.png)
+
+![失敗した run: レビュー → 裁定 → 修正ループを 2 周したあと、裁定ステップで失敗](docs/screenshot-failed.png)
+
 ## できること
 
 - **タイムライン**: ステップの開始・完了を時刻順に。並列ステップは子ごとに木にして、execute / report / judge の終了時刻を並べる
