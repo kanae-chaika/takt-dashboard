@@ -69,16 +69,9 @@ port: 7331
 
 ## 公式の Web UI（`takt ui`）との関係
 
-takt 本体にも Web UI（`takt ui`、`http://127.0.0.1:20525`）があります。このダッシュボードはそれを置き換えるものではなく、見張り専用の補助です。両方を同時に動かせます（ポートが違うので衝突しません）。`takt ui` から起動した run は、このダッシュボードの一覧にも「UI:」付きで出ます。
+takt 本体の Web UI（`takt ui`、`http://127.0.0.1:20525`）が一覧に出すのは、**その UI から起動した run だけ**です。このダッシュボードは、CLI（`takt run` / `takt watch`）で回した run も含めて**全部**を一覧にします（UI から起動したものは「UI:」付き）。
 
-| | 公式 Web UI | このダッシュボード |
-|---|---|---|
-| タスクの作成・PR 作成・merge などの操作 | できる | できない（読むだけ） |
-| ITER ごとのログ・プロンプト全文 | 見られる | 判定の reason とレポートのみ |
-| 複数リポジトリ・worktree の run の横断 | 登録したディレクトリ単位 | まとめて一覧 |
-| 中断・レート上限・provider 切替の表示 | — | あり |
-
-ステップの詳細を深く見たいときは公式 UI、複数の run を眺めて異常にすぐ気づきたいときはこちら、という使い分けを想定しています。
+ダッシュボードは見るだけで、タスクの作成や PR・merge などの操作は公式 UI で行います。ポートが違うので両方を同時に動かせます。
 
 ## 注意
 
@@ -134,7 +127,7 @@ Started inside a repository, it follows the worktrees takt created (from `.takt/
 
 Both can also be set with environment variables (`TAKT_DASHBOARD_ROOTS`, `TAKT_DASHBOARD_PORT`) or in `~/.config/takt-dashboard/config.yaml` (`roots:` list and `port:`); command line > environment > config file > defaults. The dashboard keeps its own data there (`routing/` snapshots, optional `takt-logo.svg` override) and never writes into takt's `~/.takt/`. The header logo is read from the installed takt package (`docs/assets/takt-logo-dark.svg`).
 
-**Relation to the official Web UI**: takt ships its own Web UI (`takt ui`, `http://127.0.0.1:20525`). This dashboard does not replace it; it is a read-only monitor that can run alongside it (different port). The official UI handles task creation and branch/PR actions and shows full per-ITER logs and prompts; this dashboard lists runs across repositories and worktrees and highlights interruptions, rate limits and provider switches. Runs started from `takt ui` also appear here, prefixed "UI:".
+**Relation to the official Web UI**: takt's own Web UI (`takt ui`, `http://127.0.0.1:20525`) lists only the runs started from that UI. This dashboard lists all runs, including those started from the CLI (`takt run` / `takt watch`); UI-started runs are prefixed "UI:". The dashboard is read-only; task creation and branch/PR actions stay in the official UI. Both can run at the same time (different ports).
 
 **Caveats**: TAKT's run log format is experimental and may change; verified against takt 0.73.0. Run data lives in each worktree's `.takt/runs/`, so deleting a task in `takt list` removes it from the dashboard too. Binds to localhost only, no authentication.
 
