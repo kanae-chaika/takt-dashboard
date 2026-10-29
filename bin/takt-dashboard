@@ -478,6 +478,7 @@ function currentRun(sel) {
     const hit = findRuns().find((r) => r.runDir === sel);
     if (hit) return hit;
     try { return readRunDir(sel); } catch {} // 一覧に無くても meta.json があれば開く
+    return null; // 指定した run が無いときに別の run を返すと、URL と表示が食い違う。見つからなかったことは state() の runNotFound で返す
   }
   if (FIXED_RUN) return readRunDir(FIXED_RUN);
   return findRuns()[0] ?? null;
@@ -503,7 +504,7 @@ function runList(active = null, limit = 20) {
 function state(sel, showAll = false) {
   const limit = showAll ? Infinity : 20;
   const active = currentRun(sel);
-  if (!active) { const runs = runList(null, limit); return { active: null, runs, runsTotal: runs.total }; }
+  if (!active) { const runs = runList(null, limit); return { active: null, runs, runsTotal: runs.total, ...(sel ? { runNotFound: sel } : {}) }; }
   const routing = routingFor(active.runDir, active.meta.startTime);
   const tl = timeline(active.runDir, routing);
   // 中断・失敗した run は、終わった時刻を最後の行にする。失敗は meta.endTime と meta.reason / meta.failure（例: rule_no_match）、
@@ -818,6 +819,8 @@ viewerEl.addEventListener('mousedown', e => { viewerDown = e.target; });
 viewerEl.addEventListener('click', e => { if (e.target === viewerEl && viewerDown === viewerEl) closeViewer(); });
 let lastRaw = null, lastMeta = null, MAX = null;
 let selectedRun = new URLSearchParams(location.search).get('run') || '';
+// ?run= の run が見つからなかったとき true。最新の run に戻した後も、ユーザーが run を選び直すまで #upd に出し続ける
+let isRunMissing = false;
 // ?demo=1: スクリーンショット用。タスク名・リポジトリ名・ブランチ・Issue 番号を仮の値にし、エージェント出力とキューは出さない
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 function demoize(st){
@@ -830,19 +833,25 @@ function demoize(st){
   return st;
 }
 let SHOW_ALL = false;
+// 選択（run・全件表示）を変えるたびに増やす。応答待ちの間に変わっていたら古い応答を捨てる（A → B → A と戻した場合も区別できるように）
+let selGen = 0;
 function selectRun(v){
+  selGen++;
   if (v === '__more__') {
     // 全件に切り替えたあと、閉じてしまったプルダウンを開き直す（showPicker はクリック直後の数秒だけ許される。非対応ブラウザでは何もしない）
     SHOW_ALL = true; lastRaw = null;
     tick().then(() => { try { document.getElementById('runsel').showPicker(); } catch {} });
     return;
   }
+  if (v) isRunMissing = false;
   selectedRun = v; lastRaw = null; history.replaceState(null, '', (v ? '?run='+encodeURIComponent(v) : location.pathname) + (DEMO ? (v ? '&' : '?') + 'demo=1' : '')); tick(); }
 function taskMark(s){ return s==='running' ? '🟢' : s==='completed' ? '✅' : s==='pending' ? '⏳' : '🔴'; }
 function statusLabel(s){ return s==='interrupted' ? '中断' : s; }
 function runLabel(r){ const mark = r.status==='running' ? '🟢 ' : (r.status==='completed' ? '✅ ' : (r.status==='interrupted' ? '🟠 中断 ' : '🔴 ' + r.status + ' ')); return mark + (r.label || r.slug.replace(/^\d{8}-\d{6}-/,'')) + '  (' + jst(r.updatedAt) + ' ' + r.step + ')'; }
 async function tick(){
-  const raw = await (await fetch('/api/state?' + (selectedRun ? 'run='+encodeURIComponent(selectedRun) : '') + (SHOW_ALL ? '&all=1' : ''))).text();
+  const reqRun = selectedRun, gen = selGen;
+  const raw = await (await fetch('/api/state?' + (reqRun ? 'run='+encodeURIComponent(reqRun) : '') + (SHOW_ALL ? '&all=1' : ''))).text();
+  if (gen !== selGen) return; // 応答待ちの間に選択を変えられたら古い応答は捨てる（後から届いて選んだ run の表示や選択を上書きしないように）
   if (raw === lastRaw) {
     const el = document.getElementById('elapsed');
     if (el && lastMeta && lastMeta.status === 'running') el.textContent = fmt(Date.now() - new Date(lastMeta.startTime).getTime());
@@ -850,6 +859,8 @@ async function tick(){
   }
   lastRaw = raw;
   const st = DEMO ? demoize(JSON.parse(raw)) : JSON.parse(raw);
+  // ?run= の run が見つからない: 選択と URL の ?run= を外して最新の run を取り直す
+  if (st.runNotFound) { isRunMissing = true; selectRun(''); return; }
   const a = st.active;
   lastMeta = a ? a.meta : null;
   const sel = document.getElementById('runsel');
@@ -862,10 +873,11 @@ async function tick(){
   const keep = {};
   for (const el of document.querySelectorAll('.scroll')) keep[el.id] = { top: el.scrollTop, left: el.scrollLeft, atBottom: el.scrollHeight - el.clientHeight - el.scrollTop < 4, atRight: el.scrollWidth - el.clientWidth - el.scrollLeft < 4 };
   const winY = window.scrollY;
-  if (!a) { document.getElementById('app').innerHTML = '<section class="wide">takt の run が見つかりません</section>'; return; }
+  const notFoundMsg = isRunMissing ? '<span class="err">指定した run が見つかりません</span> ' : '';
+  if (!a) { if (isRunMissing) document.getElementById('upd').innerHTML = notFoundMsg; document.getElementById('app').innerHTML = '<section class="wide">takt の run が見つかりません</section>'; return; }
   const m = a.meta;
   MAX = a.maxSteps ?? null;
-  document.getElementById('upd').textContent = '最終更新 ' + jst(m.updatedAt);
+  document.getElementById('upd').innerHTML = notFoundMsg + esc('最終更新 ' + jst(m.updatedAt));
   const end = m.status==='running' ? Date.now() : new Date(m.updatedAt).getTime();
   const stack = (m.resume_point?.stack ?? []).map((s,i,arr) => (i===arr.length-1 ? '<b>'+esc(s.workflow)+' › '+esc(s.step)+'</b>' : esc(s.workflow)+' › '+esc(s.step))).join(' &nbsp;→&nbsp; ');
   const tl = st.timeline;
