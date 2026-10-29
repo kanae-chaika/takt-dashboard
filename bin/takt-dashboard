@@ -820,7 +820,7 @@ async function tick(){
   if (!selectedRun && cur) selectedRun = cur; // 自動選択を固定（他の run が更新されても切り替わらない）
   // 再描画前にスクロール位置を保存（末尾に張り付いていたら再描画後も末尾へ）
   const keep = {};
-  for (const el of document.querySelectorAll('.scroll')) keep[el.id] = { top: el.scrollTop, atBottom: el.scrollHeight - el.clientHeight - el.scrollTop < 4 };
+  for (const el of document.querySelectorAll('.scroll')) keep[el.id] = { top: el.scrollTop, left: el.scrollLeft, atBottom: el.scrollHeight - el.clientHeight - el.scrollTop < 4, atRight: el.scrollWidth - el.clientWidth - el.scrollLeft < 4 };
   const winY = window.scrollY;
   if (!a) { document.getElementById('app').innerHTML = '<section class="wide">takt の run が見つかりません</section>'; return; }
   const m = a.meta;
@@ -873,8 +873,10 @@ async function tick(){
 function restoreScroll(keep, winY){
   for (const el of document.querySelectorAll('.scroll')) {
     const k = keep[el.id];
-    if (!k) { if (el.id === 'tl') el.scrollTop = el.scrollHeight; continue; } // 初回描画: タイムラインは末尾
+    // 初回描画: タイムラインは末尾、経路は右端（最新のステップが見える位置）。以後は末尾/右端に張り付いていたら追従、そうでなければ位置を保つ
+    if (!k) { if (el.id === 'tl') el.scrollTop = el.scrollHeight; if (el.id === 'path') el.scrollLeft = el.scrollWidth; continue; }
     el.scrollTop = (k.atBottom && el.id === 'tl') ? el.scrollHeight : k.top;
+    if (el.id === 'path') el.scrollLeft = k.atRight ? el.scrollWidth : k.left;
   }
   window.scrollTo(0, winY);
 }
