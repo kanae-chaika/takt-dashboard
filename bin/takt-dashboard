@@ -943,4 +943,4 @@ createServer((req, res) => {
   }
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); // 再起動後に古いページが使われないように
   res.end(HTML);
-}).listen(PORT, () => console.log('takt-dashboard: http://localhost:' + PORT));
+}).listen(PORT, '127.0.0.1', () => console.log('takt-dashboard: http://localhost:' + PORT)); // ローカル専用。他のマシンからは繋がらない
