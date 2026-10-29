@@ -467,16 +467,19 @@ function parseTasks(text) {
 }
 
 // ---------- state ----------
+// run ディレクトリ（meta.json のある場所）を直接読む。一覧に無い run（zip で持ってきたもの等）を ?run= や <run_dir> で開くときに使う
+function readRunDir(dir) {
+  const runDir = path.resolve(dir);
+  const meta = JSON.parse(readFileSync(path.join(runDir, 'meta.json'), 'utf8'));
+  return { meta, runDir, root: path.resolve(runDir, '..', '..', '..') };
+}
 function currentRun(sel) {
   if (sel) {
     const hit = findRuns().find((r) => r.runDir === sel);
     if (hit) return hit;
+    try { return readRunDir(sel); } catch {} // 一覧に無くても meta.json があれば開く
   }
-  if (FIXED_RUN) {
-    const runDir = path.resolve(FIXED_RUN);
-    const meta = JSON.parse(readFileSync(path.join(runDir, 'meta.json'), 'utf8'));
-    return { meta, runDir, root: path.resolve(runDir, '..', '..', '..') };
-  }
+  if (FIXED_RUN) return readRunDir(FIXED_RUN);
   return findRuns()[0] ?? null;
 }
 function taskForRoot(root, cache) {
