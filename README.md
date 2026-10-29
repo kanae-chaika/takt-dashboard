@@ -19,14 +19,20 @@
 ## 使い方
 
 ```bash
-# 依存なし。clone して、takt を使っているリポジトリの中から実行する
-git clone https://github.com/kanae-chaika/takt-dashboard.git
-cd /path/to/your-repo
-node /path/to/takt-dashboard/bin/takt-dashboard
-# → http://localhost:7331
+npm install -g github:kanae-chaika/takt-dashboard   # takt-dashboard コマンドが入る（依存パッケージなし）
+
+cd /path/to/your-repo    # takt を使っているリポジトリで
+takt-dashboard           # → http://localhost:7331
 ```
 
 リポジトリで起動すると、そのリポジトリの `.takt/clone-meta/` と `.takt/tasks.yaml` から takt が作った worktree を辿って、run をまとめて一覧にします。`~/.takt`（`takt ui` から起動した run）も見ます。
+
+コードを自分で直したい場合は clone して `npm link` すると、同じ `takt-dashboard` コマンドが clone 先を指すようになります。
+
+```bash
+git clone https://github.com/kanae-chaika/takt-dashboard.git
+cd takt-dashboard && npm link
+```
 
 | オプション | 説明 |
 |---|---|
@@ -97,12 +103,15 @@ A local web dashboard for watching [TAKT](https://github.com/nrslib/takt) runs. 
 **Usage**
 
 ```bash
-git clone https://github.com/kanae-chaika/takt-dashboard.git
-cd /path/to/your-repo                       # a repository where you use takt
-node /path/to/takt-dashboard/bin/takt-dashboard   # → http://localhost:7331
+npm install -g github:kanae-chaika/takt-dashboard   # installs the takt-dashboard command (no dependencies)
+
+cd /path/to/your-repo    # a repository where you use takt
+takt-dashboard           # → http://localhost:7331
 ```
 
 Started inside a repository, it follows the worktrees takt created (from `.takt/clone-meta/` and `.takt/tasks.yaml`) and lists all their runs, plus runs under `~/.takt` (started from `takt ui`).
+
+To hack on it, clone the repository and run `npm link` so the `takt-dashboard` command points at your checkout.
 
 | Option | Description |
 |---|---|
