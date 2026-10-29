@@ -820,7 +820,7 @@ viewerEl.addEventListener('click', e => { if (e.target === viewerEl && viewerDow
 let lastRaw = null, lastMeta = null, MAX = null;
 let selectedRun = new URLSearchParams(location.search).get('run') || '';
 // ?run= の run が見つからなかったとき true。最新の run に戻した後も、ユーザーが run を選び直すまで #upd に出し続ける
-let runNotFound = false;
+let isRunMissing = false;
 // ?demo=1: スクリーンショット用。タスク名・リポジトリ名・ブランチ・Issue 番号を仮の値にし、エージェント出力とキューは出さない
 const DEMO = new URLSearchParams(location.search).get('demo') === '1';
 function demoize(st){
@@ -840,13 +840,14 @@ function selectRun(v){
     tick().then(() => { try { document.getElementById('runsel').showPicker(); } catch {} });
     return;
   }
-  if (v) runNotFound = false;
+  if (v) isRunMissing = false;
   selectedRun = v; lastRaw = null; history.replaceState(null, '', (v ? '?run='+encodeURIComponent(v) : location.pathname) + (DEMO ? (v ? '&' : '?') + 'demo=1' : '')); tick(); }
 function taskMark(s){ return s==='running' ? '🟢' : s==='completed' ? '✅' : s==='pending' ? '⏳' : '🔴'; }
 function statusLabel(s){ return s==='interrupted' ? '中断' : s; }
 function runLabel(r){ const mark = r.status==='running' ? '🟢 ' : (r.status==='completed' ? '✅ ' : (r.status==='interrupted' ? '🟠 中断 ' : '🔴 ' + r.status + ' ')); return mark + (r.label || r.slug.replace(/^\d{8}-\d{6}-/,'')) + '  (' + jst(r.updatedAt) + ' ' + r.step + ')'; }
 async function tick(){
-  const raw = await (await fetch('/api/state?' + (selectedRun ? 'run='+encodeURIComponent(selectedRun) : '') + (SHOW_ALL ? '&all=1' : ''))).text();
+  const reqRun = selectedRun; // 応答待ちの間に run を選び直されたら、古い応答の runNotFound で選択を消さないため
+  const raw = await (await fetch('/api/state?' + (reqRun ? 'run='+encodeURIComponent(reqRun) : '') + (SHOW_ALL ? '&all=1' : ''))).text();
   if (raw === lastRaw) {
     const el = document.getElementById('elapsed');
     if (el && lastMeta && lastMeta.status === 'running') el.textContent = fmt(Date.now() - new Date(lastMeta.startTime).getTime());
@@ -855,7 +856,7 @@ async function tick(){
   lastRaw = raw;
   const st = DEMO ? demoize(JSON.parse(raw)) : JSON.parse(raw);
   // ?run= の run が見つからない: 選択と URL の ?run= を外して最新の run を取り直す
-  if (st.runNotFound) { runNotFound = true; selectRun(''); return; }
+  if (st.runNotFound) { if (reqRun === selectedRun) { isRunMissing = true; selectRun(''); } return; }
   const a = st.active;
   lastMeta = a ? a.meta : null;
   const sel = document.getElementById('runsel');
@@ -868,8 +869,8 @@ async function tick(){
   const keep = {};
   for (const el of document.querySelectorAll('.scroll')) keep[el.id] = { top: el.scrollTop, left: el.scrollLeft, atBottom: el.scrollHeight - el.clientHeight - el.scrollTop < 4, atRight: el.scrollWidth - el.clientWidth - el.scrollLeft < 4 };
   const winY = window.scrollY;
-  const notFoundMsg = runNotFound ? '<span class="err">指定した run が見つかりません</span> ' : '';
-  if (!a) { if (runNotFound) document.getElementById('upd').innerHTML = notFoundMsg; document.getElementById('app').innerHTML = '<section class="wide">takt の run が見つかりません</section>'; return; }
+  const notFoundMsg = isRunMissing ? '<span class="err">指定した run が見つかりません</span> ' : '';
+  if (!a) { if (isRunMissing) document.getElementById('upd').innerHTML = notFoundMsg; document.getElementById('app').innerHTML = '<section class="wide">takt の run が見つかりません</section>'; return; }
   const m = a.meta;
   MAX = a.maxSteps ?? null;
   document.getElementById('upd').innerHTML = notFoundMsg + esc('最終更新 ' + jst(m.updatedAt));
