@@ -36,7 +36,7 @@ cd takt-dashboard && npm link
 
 | オプション | 説明 |
 |---|---|
-| `--roots ~/projects,~/work` | 複数のリポジトリをまとめて見たいとき。リポジトリをまとめて置いているディレクトリをカンマ区切りで指定すると、その直下のリポジトリと worktree の `.takt/runs` を見る。環境変数 `TAKT_DASHBOARD_ROOTS` でも可 |
+| `--roots ~/dev,~/projects` | 複数のリポジトリをまとめて見たいとき。リポジトリをまとめて置いているディレクトリをカンマ区切りで指定すると、その直下のリポジトリと worktree の `.takt/runs` を見る。環境変数 `TAKT_DASHBOARD_ROOTS` でも可 |
 | `--port N` | ポート（既定 7331）。環境変数 `TAKT_DASHBOARD_PORT` でも可 |
 | `<run_dir>` | 表示する run ディレクトリを固定 |
 
@@ -45,7 +45,7 @@ cd takt-dashboard && npm link
 ```yaml
 # ~/.config/takt-dashboard/config.yaml
 roots:
-  - ~/projects
+  - ~/dev
 port: 7331
 ```
 
@@ -115,7 +115,7 @@ To hack on it, clone the repository and run `npm link` so the `takt-dashboard` c
 
 | Option | Description |
 |---|---|
-| `--roots ~/projects,~/work` | To watch several repositories at once: give the directories that hold your repositories (comma-separated); each one and its immediate subdirectories are checked for `.takt/runs`. Also `TAKT_DASHBOARD_ROOTS` |
+| `--roots ~/dev,~/projects` | To watch several repositories at once: give the directories that hold your repositories (comma-separated); each one and its immediate subdirectories are checked for `.takt/runs`. Also `TAKT_DASHBOARD_ROOTS` |
 | `--port N` | Port (default 7331). Also `TAKT_DASHBOARD_PORT` |
 | `<run_dir>` | Pin a specific run directory |
 
