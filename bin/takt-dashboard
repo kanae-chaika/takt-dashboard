@@ -7,7 +7,7 @@
 // データ元は run ディレクトリの logs/*.jsonl・meta.json・reports/。provider/model が無い並列サブステップは
 // ~/.takt/runtime.yaml（無ければ config.yaml）から引く。
 import { createServer } from 'node:http';
-import { readFileSync, readdirSync, existsSync, statSync, realpathSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync, realpathSync, mkdirSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -927,7 +927,8 @@ tick(); setInterval(tick, 2000);
 if (FIXED_RUN) {
   try { readRunDir(FIXED_RUN); }
   catch (e) {
-    console.error('takt-dashboard: ' + path.join(path.resolve(FIXED_RUN), 'meta.json') + ' を読めません: ' + e.message);
+    // stderr がパイプだと console.error は非同期で、直後の process.exit で消えることがあるので同期で書く
+    writeSync(2, 'takt-dashboard: ' + path.join(path.resolve(FIXED_RUN), 'meta.json') + ' を読めません: ' + e.message + '\n');
     process.exit(1);
   }
 }

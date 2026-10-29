@@ -40,7 +40,8 @@ function spawnDashboard(t, sandbox, extraArgs, port) {
   const out = { stdout: '', stderr: '' };
   proc.stdout.on('data', (d) => { out.stdout += d; });
   proc.stderr.on('data', (d) => { out.stderr += d; });
-  const exited = new Promise((resolve) => proc.once('exit', (code, signal) => resolve({ code, signal })));
+  // 'exit' の時点では stdout / stderr が読み終わっていないことがあるので、閉じた後の 'close' を待つ
+  const exited = new Promise((resolve) => proc.once('close', (code, signal) => resolve({ code, signal })));
   t.after(() => { if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGKILL'); });
   return { proc, out, exited };
 }
