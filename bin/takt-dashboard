@@ -475,9 +475,13 @@ function taskForRoot(root, cache) {
   if (!cache.has(root)) cache.set(root, parseTasks(tasksYamlFor(root).text));
   return cache.get(root).find((t) => t.worktree_path && t.worktree_path === root) || null;
 }
-function runList() {
+// 一覧は新しい 20 件。表示中の run がそれより古いときは先頭に足す（ドロップダウンに無いと別の run が選ばれて見える）
+function runList(active = null) {
   const cache = new Map();
-  return findRuns().slice(0, 20).map((r) => {
+  const all = findRuns();
+  const top = all.slice(0, 20);
+  if (active && !top.some((r) => r.runDir === active.runDir)) { const me = all.find((r) => r.runDir === active.runDir) ?? active; top.unshift(me); }
+  return top.map((r) => {
     const t = taskForRoot(r.root, cache);
     return { runDir: r.runDir, status: r.meta.status, slug: r.meta.runSlug, step: r.meta.currentStep, updatedAt: r.meta.updatedAt, label: t ? (t.summary || t.name) : (r.label ?? null) };
   });
@@ -503,13 +507,15 @@ function state(sel) {
   }
   else if (m.status === 'failed' || m.status === 'aborted') {
     const step = m.failure?.step ?? m.currentStep ?? '';
-    // 失敗したステップの最後の判定（rule_no_match なら 3 段階のエラー内容）を付けて、クリックで原因を見られるようにする
-    const key = tl.lastJudgeKey[step];
+    // 失敗したステップの「最後の試行」の判定（rule_no_match なら 3 段階のエラー内容）を付けて、クリックで原因を見られるようにする。
+    // 同じステップの前の iteration の判定を付けないよう、その step の最後の開始行の key に限る
+    const lastStart = [...tl.rows].reverse().find((r) => (r.kind === 'step' || r.kind === 'sub') && r.step === step);
+    const key = lastStart && tl.judges[lastStart.key] ? lastStart.key : null;
     tl.rows.push({ ts: m.endTime ?? m.updatedAt, kind: 'end', status: m.status, step, key: key ?? '', reason: m.reason ?? m.failure?.error ?? '', judge: key ? tl.judges[key] : null });
   }
   const tasks = tasksYamlFor(active.root);
   return {
-    runs: runList(),
+    runs: runList(active),
     active: { meta: active.meta, runDir: active.runDir, root: active.root, reports: tl.unmatched, maxSteps: maxStepsFor(active.meta.workflow, active.root) },
     timeline: tl.rows,
     lastOutput: tl.lastOutput,
@@ -646,7 +652,7 @@ const jst = (ts) => ts ? new Date(ts).toLocaleTimeString('ja-JP', { hour12:false
 const fmt = (ms) => { const s=Math.max(0,Math.floor(ms/1000)); return Math.floor(s/60)+'分'+String(s%60).padStart(2,'0')+'秒'; };
 // ログに provider/model の記録が無い行（並列の子）は設定から引いた値。表示は同じにし、出どころは title（hover）だけで示す
 function pm(r){
-  const cur = esc(r.provider ?? '?') + '/' + esc(r.model ?? '(CLI既定)');
+  const cur = esc(r.provider ?? '?') + (r.model ? '/' + esc(r.model) : ''); // model 未指定（provider の既定）は provider 名だけ
   if (r.switchFrom) return '<span class="sw" title="レート上限などで切替">'+esc(r.switchFrom)+' → '+cur+'</span>'; // 切替があった開始行は黄色で「切替前 → 切替後」
   const t = r.source==='log' ? '' : ' title="実行ログに記録が無いため設定（'+escA(r.source)+'）からの推定"'; return '<span'+t+'>'+cur+'</span>';
 }
