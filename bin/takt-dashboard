@@ -833,7 +833,10 @@ function demoize(st){
   return st;
 }
 let SHOW_ALL = false;
+// 選択（run・全件表示）を変えるたびに増やす。応答待ちの間に変わっていたら古い応答を捨てる（A → B → A と戻した場合も区別できるように）
+let selGen = 0;
 function selectRun(v){
+  selGen++;
   if (v === '__more__') {
     // 全件に切り替えたあと、閉じてしまったプルダウンを開き直す（showPicker はクリック直後の数秒だけ許される。非対応ブラウザでは何もしない）
     SHOW_ALL = true; lastRaw = null;
@@ -846,9 +849,9 @@ function taskMark(s){ return s==='running' ? '🟢' : s==='completed' ? '✅' : 
 function statusLabel(s){ return s==='interrupted' ? '中断' : s; }
 function runLabel(r){ const mark = r.status==='running' ? '🟢 ' : (r.status==='completed' ? '✅ ' : (r.status==='interrupted' ? '🟠 中断 ' : '🔴 ' + r.status + ' ')); return mark + (r.label || r.slug.replace(/^\d{8}-\d{6}-/,'')) + '  (' + jst(r.updatedAt) + ' ' + r.step + ')'; }
 async function tick(){
-  const reqRun = selectedRun;
+  const reqRun = selectedRun, gen = selGen;
   const raw = await (await fetch('/api/state?' + (reqRun ? 'run='+encodeURIComponent(reqRun) : '') + (SHOW_ALL ? '&all=1' : ''))).text();
-  if (reqRun !== selectedRun) return; // 応答待ちの間に run を選び直されたら古い応答は捨てる（後から届いて選んだ run の表示や選択を上書きしないように）
+  if (gen !== selGen) return; // 応答待ちの間に選択を変えられたら古い応答は捨てる（後から届いて選んだ run の表示や選択を上書きしないように）
   if (raw === lastRaw) {
     const el = document.getElementById('elapsed');
     if (el && lastMeta && lastMeta.status === 'running') el.textContent = fmt(Date.now() - new Date(lastMeta.startTime).getTime());
