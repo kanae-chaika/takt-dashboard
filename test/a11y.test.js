@@ -314,6 +314,13 @@ test('モーダル（#viewer）は <dialog> で、再描画で置き換わる #a
   assert.equal(page.document.getElementById('app').contains(page.viewer), false);
 });
 
+test('モーダルはタイトル（#vtitle）を名前として読ませ、× ボタンには「閉じる」という名前が付いている', () => {
+  const page = loadPage();
+  assert.equal(page.viewer.getAttribute('aria-labelledby'), 'vtitle');
+  assert.ok(page.document.getElementById('vtitle'));
+  assert.equal(page.viewer.querySelector('button[onclick="closeViewer()"]').getAttribute('aria-label'), '閉じる');
+});
+
 // ---------- 指摘 11: キーボードで開ける要素 ----------
 
 test('レポート・判定・エラーを開く要素は、タスク欄・タイムライン・未分類のレポートのすべてで <button type="button"> になっている', async () => {
@@ -505,6 +512,31 @@ test('開いている間に再描画で開いた要素が作り直されても�
       const expected = c.same(d);
       assert.ok(expected && expected.isConnected);
       assertSameElement(d.activeElement, expected, '戻った先');
+    });
+  }
+});
+
+test('#app の中の要素にフォーカスがあるときに再描画が走っても、作り直された同じ位置の要素にフォーカスが残る', async (t) => {
+  const cases = [
+    { name: 'タイムラインの判定（同じ data-ji の 2 つ目）', pick: (d) => d.querySelectorAll('.judge[data-ji]')[1] },
+    { name: 'タスク欄の最終判定（同じ data-ji の 1 つ目）', pick: (d) => d.querySelectorAll('.judge[data-ji]')[0] },
+    { name: '経路のノード', pick: (d) => d.querySelector('#path .node.has-j') },
+    { name: 'エラー', pick: (d) => d.querySelector('#tl .judge[data-ei]') },
+    { name: '未分類のレポート', pick: (d) => d.querySelector('#reps .rep[data-rel="other.md"]') },
+  ];
+  let n = 30;
+  for (const c of cases) {
+    await t.test(c.name, async () => {
+      const page = await renderedPage();
+      const d = page.document;
+      const el = c.pick(d);
+      el.focus();
+      assertSameElement(d.activeElement, el, 'フォーカスした（前提）');
+      await rerender(page, n++);
+      assert.equal(el.isConnected, false, '再描画で作り直されている（前提）');
+      const expected = c.pick(d);
+      assert.ok(expected && expected.isConnected);
+      assertSameElement(d.activeElement, expected, '再描画後のフォーカス');
     });
   }
 });
