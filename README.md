@@ -27,13 +27,6 @@ takt-dashboard           # → http://localhost:7331
 
 リポジトリで起動すると、そのリポジトリの `.takt/clone-meta/` と `.takt/tasks.yaml` から takt が作った worktree を辿って、run をまとめて一覧にします。`~/.takt`（`takt ui` から起動した run）も見ます。
 
-コードを自分で直したい場合は clone して `npm link` すると、同じ `takt-dashboard` コマンドが clone 先を指すようになります。
-
-```bash
-git clone https://github.com/kanae-chaika/takt-dashboard.git
-cd takt-dashboard && npm link
-```
-
 | オプション | 説明 |
 |---|---|
 | `--roots ~/dev,~/projects` | 複数のリポジトリをまとめて見たいとき。リポジトリをまとめて置いているディレクトリをカンマ区切りで指定すると、その直下のリポジトリと worktree の `.takt/runs` を見る。環境変数 `TAKT_DASHBOARD_ROOTS` でも可 |
@@ -80,6 +73,15 @@ port: 7331
 - run のデータは worktree 側の `.takt/runs/` にあります。`takt list` でタスクを削除すると、その run はダッシュボードからも消えます
 - ローカル専用です（`localhost` にしか bind しません）。認証はありません
 
+## 開発する場合（通常は不要）
+
+ダッシュボードのコード自体を改造したい場合だけ、`npm install -g` の代わりに clone して `npm link` します。`takt-dashboard` コマンドが clone 先を指すようになり、直した内容がそのまま反映されます。使うだけなら上の `npm install -g` で足ります。
+
+```bash
+git clone https://github.com/kanae-chaika/takt-dashboard.git
+cd takt-dashboard && npm link
+```
+
 ## ライセンス
 
 MIT
@@ -111,8 +113,6 @@ takt-dashboard           # → http://localhost:7331
 
 Started inside a repository, it follows the worktrees takt created (from `.takt/clone-meta/` and `.takt/tasks.yaml`) and lists all their runs, plus runs under `~/.takt` (started from `takt ui`).
 
-To hack on it, clone the repository and run `npm link` so the `takt-dashboard` command points at your checkout.
-
 | Option | Description |
 |---|---|
 | `--roots ~/dev,~/projects` | To watch several repositories at once: give the directories that hold your repositories (comma-separated); each one and its immediate subdirectories are checked for `.takt/runs`. Also `TAKT_DASHBOARD_ROOTS` |
@@ -122,5 +122,7 @@ To hack on it, clone the repository and run `npm link` so the `takt-dashboard` c
 Defaults can be set in `~/.config/takt-dashboard/config.yaml` (`roots:` list and `port:`); command line > environment > config file > defaults. The dashboard keeps its own data there (`routing/` snapshots, optional `takt-logo.svg` override) and never writes into takt's `~/.takt/`. The header logo is read from the installed takt package (`docs/assets/takt-logo-dark.svg`).
 
 **Caveats**: TAKT's run log format is experimental and may change; verified against takt 0.73.0. Run data lives in each worktree's `.takt/runs/`, so deleting a task in `takt list` removes it from the dashboard too. Binds to localhost only, no authentication.
+
+**Development (not needed for normal use)**: only if you want to modify the dashboard itself, clone the repository and run `npm link` instead of `npm install -g`; the `takt-dashboard` command then points at your checkout.
 
 License: MIT
