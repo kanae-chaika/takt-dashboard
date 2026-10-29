@@ -591,3 +591,41 @@ test('run が完了してタスク欄に同じ判定が増えても、フォー�
   assert.equal(d.querySelectorAll('.judge[data-ji]').length, 2, '完了でタスク欄に最終判定が増えた（前提）');
   assertSameElement(d.activeElement, d.querySelector('#tl .judge[data-ji]'), '再描画後のフォーカス');
 });
+
+test('レポートの取得を待つ間に別の判定を開いたら、遅れて届いたレポートで中身を上書きせず、閉じると判定を開いた要素に戻る', async () => {
+  const page = await renderedPage();
+  const d = page.document;
+  // plan.md の取得だけ止めておき、後から応答を返す
+  let release; const held = new Promise((r) => { release = r; });
+  const realFetch = page.ctx.fetch;
+  page.ctx.fetch = (u) => u.startsWith('/api/report') ? held.then(() => realFetch(u)) : realFetch(u);
+  press(page, d.querySelector('#tl .rep[data-rel="plan.md"]'), 'Enter');
+  const judge = d.querySelector('#tl .judge[data-ji]');
+  press(page, judge, 'Enter');
+  assert.equal(page.viewer.open, true);
+  assert.equal(title(page), 'plan の判定（iter 1）');
+  release();
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(title(page), 'plan の判定（iter 1）', '古いレポートの応答で上書きされない');
+  pressEscape(page);
+  await settle(); await settle();
+  assertSameElement(d.activeElement, judge, '戻った先');
+});
+
+test('未分類のレポートがログの追加でタイムラインに移っても、フォーカスは同じレポートに残る', async (t) => {
+  // other という step が現れると、other.md はファイル名でその行に付き、未分類から外れる
+  const OTHER = [
+    { type: 'step_start', step: 'other', iteration: 3, workflow: 'default', provider: 'claude', timestamp: '2026-10-29T01:00:08.000Z' },
+  ];
+  const writeLog = (events) => fs.writeFileSync(path.join(RUN, 'logs', 'a.jsonl'), events.map((e) => JSON.stringify(e)).join('\n') + '\n');
+  t.after(() => writeLog(EVENTS));
+  writeLog(EVENTS);
+  const page = await renderedPage();
+  const d = page.document;
+  d.querySelector('#reps .rep[data-rel="other.md"]').focus();
+  writeLog([...EVENTS, ...OTHER]);
+  await rerender(page, 60);
+  const moved = d.querySelector('#tl .rep[data-rel="other.md"]');
+  assert.ok(moved, 'other.md がタイムラインに移った（前提）');
+  assertSameElement(d.activeElement, moved, '再描画後のフォーカス');
+});

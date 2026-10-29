@@ -815,7 +815,9 @@ function rowHtml(r, i){
   return '<tr class="alert"><td class="ts">'+jst(r.ts)+'</td><td colspan="4">‼ '+esc(r.type)+' '+esc(r.step)+' '+esc(r.reason)+' '+esc(r.error.slice(0,300))+'</td></tr>';
 }
 async function openReport(rel){
+  const gen = viewerGen;
   const t = await (await fetch('/api/report?p='+encodeURIComponent(rel)+(selectedRun ? '&run='+encodeURIComponent(selectedRun) : ''))).text();
+  if (gen !== viewerGen) return; // 取得を待つ間に別のレポート・判定を開いていたら、古い応答で中身と開いた要素を上書きしない
   document.getElementById('vtitle').textContent = rel;
   const body = document.getElementById('vbody'); body.textContent = t; body.scrollTop = 0; body.style.fontSize = '';
   showViewer();
@@ -841,11 +843,13 @@ function locate(el){
 // 表示箇所（タイムライン・経路・未分類のレポート・それ以外=タスク欄）。run が完了するとタスク欄に最終判定が増え、番目だけでは別の箇所の同じ判定に移ってしまうため
 function areaOf(el){ const c = el.closest('#tl, #path, #reps'); return c ? c.id : ''; }
 function sameAs(full, attr, key, area){ return [...document.querySelectorAll(full)].filter((x) => focusKey(x, attr) === key && areaOf(x) === area); }
-function relocate(o){ return sameAs(o.full, o.attr, o.key, o.area)[o.index]; }
+// 元の表示箇所に無ければ（未分類だったレポートがログの追加でタイムラインに移った等）、ほかの表示箇所の同じ要素に戻す
+function relocate(o){ return sameAs(o.full, o.attr, o.key, o.area)[o.index] ?? [...document.querySelectorAll(o.full)].find((x) => focusKey(x, o.attr) === o.key); }
 // モーダルを開いた要素。閉じたらそこへフォーカスを戻す。
 // openReport は fetch を待ってから開くので、待つ間に再描画が走っても困らないよう、クリック・キーの時点で記録する
-let viewerOpener = null;
-function noteOpener(el){ viewerOpener = locate(el); }
+// viewerGen は開く操作のたびに増やす（openReport が fetch の後に、自分より後の操作があったかを見るため）
+let viewerOpener = null, viewerGen = 0;
+function noteOpener(el){ viewerOpener = locate(el); viewerGen++; }
 // showModal で背景を操作できなくし（Tab・クリックとも）、フォーカスを中へ移す。開いたまま別の内容に切り替えるときは呼び直さない
 function showViewer(){ const v = document.getElementById('viewer'); if (!v.open) v.showModal(); }
 function closeViewer(){ const v = document.getElementById('viewer'); if (v.open) v.close(); }
