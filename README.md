@@ -67,6 +67,19 @@ port: 7331
 - 選んだ結果は `~/.config/takt-dashboard/routing/<run slug>.json` に保存され、以後は固定
 - バックアップが無い場合は現在の設定値を使います（hover で「設定からの推定」と表示）
 
+## 公式の Web UI（`takt ui`）との関係
+
+takt 本体にも Web UI（`takt ui`、`http://127.0.0.1:20525`）があります。このダッシュボードはそれを置き換えるものではなく、見張り専用の補助です。両方を同時に動かせます（ポートが違うので衝突しません）。
+
+| | 公式 Web UI | このダッシュボード |
+|---|---|---|
+| タスクの作成・PR 作成・merge などの操作 | できる | できない（読むだけ） |
+| ITER ごとのログ・プロンプト全文 | 見られる | 判定の reason とレポートのみ |
+| 複数リポジトリ・worktree の run の横断 | 登録したディレクトリ単位 | まとめて一覧 |
+| 中断・レート上限・provider 切替の表示 | — | あり |
+
+`takt ui` から起動した run は、このダッシュボードの一覧にも「UI:」付きで出ます。ステップの詳細を深く見たいときは公式 UI、複数の run を眺めて異常にすぐ気づきたいときはこちら、という使い分けを想定しています。
+
 ## 注意
 
 - TAKT の Web UI と run のログ形式は「実験的機能」で、予告なく変わります。takt **0.73.0** のログで動作確認しています。追従は約束しません
@@ -120,6 +133,8 @@ Started inside a repository, it follows the worktrees takt created (from `.takt/
 | `<run_dir>` | Pin a specific run directory |
 
 Both can also be set with environment variables (`TAKT_DASHBOARD_ROOTS`, `TAKT_DASHBOARD_PORT`) or in `~/.config/takt-dashboard/config.yaml` (`roots:` list and `port:`); command line > environment > config file > defaults. The dashboard keeps its own data there (`routing/` snapshots, optional `takt-logo.svg` override) and never writes into takt's `~/.takt/`. The header logo is read from the installed takt package (`docs/assets/takt-logo-dark.svg`).
+
+**Relation to the official Web UI**: takt ships its own Web UI (`takt ui`, `http://127.0.0.1:20525`). This dashboard does not replace it; it is a read-only monitor that can run alongside it (different port). The official UI handles task creation and branch/PR actions and shows full per-ITER logs and prompts; this dashboard lists runs across repositories and worktrees and highlights interruptions, rate limits and provider switches. Runs started from `takt ui` also appear here, prefixed "UI:".
 
 **Caveats**: TAKT's run log format is experimental and may change; verified against takt 0.73.0. Run data lives in each worktree's `.takt/runs/`, so deleting a task in `takt list` removes it from the dashboard too. Binds to localhost only, no authentication.
 
