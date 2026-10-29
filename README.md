@@ -82,6 +82,7 @@ takt 本体の Web UI（`takt ui`、`http://127.0.0.1:20525`）が一覧に出�
 - TAKT の Web UI と run のログ形式は「実験的機能」で、予告なく変わります。takt **0.73.0** のログで動作確認しています。追従は約束しません
 - run のデータは worktree 側の `.takt/runs/` にあります。`takt list` でタスクを削除すると、その run はダッシュボードからも消えます
 - ローカル専用です（`localhost` にしか bind しません）。認証はありません
+- UI は日本語のみ。英語は予定
 
 ## 開発する場合（通常は不要）
 
@@ -133,7 +134,7 @@ Both can also be set with environment variables (`TAKT_DASHBOARD_ROOTS`, `TAKT_D
 
 **Relation to the official Web UI**: takt's own Web UI (`takt ui`, `http://127.0.0.1:20525`) lists only the runs started from that UI. This dashboard lists all runs, including those started from the CLI (`takt run` / `takt watch`); UI-started runs are prefixed "UI:". The dashboard is read-only; task creation and branch/PR actions stay in the official UI. Both can run at the same time (different ports).
 
-**Caveats**: TAKT's run log format is experimental and may change; verified against takt 0.73.0. Run data lives in each worktree's `.takt/runs/`, so deleting a task in `takt list` removes it from the dashboard too. Binds to localhost only, no authentication.
+**Caveats**: the UI text is Japanese only for now (English is planned). TAKT's run log format is experimental and may change; verified against takt 0.73.0. Run data lives in each worktree's `.takt/runs/`, so deleting a task in `takt list` removes it from the dashboard too. Binds to localhost only, no authentication.
 
 **Development (not needed for normal use)**: only if you want to modify the dashboard itself, clone the repository and run `npm link` instead of `npm install -g`; the `takt-dashboard` command then points at your checkout.
 
