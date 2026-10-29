@@ -16,8 +16,12 @@ export function spawnDashboard({ cwd, home, args = [], env = {} }) {
   const out = { stdout: '', stderr: '' };
   proc.stdout.on('data', (d) => { out.stdout += d; });
   proc.stderr.on('data', (d) => { out.stderr += d; });
-  // 'exit' の時点では stdout / stderr が読み終わっていないことがあるので、閉じた後の 'close' を待つ
-  const exited = new Promise((resolve) => proc.once('close', (code, signal) => resolve({ code, signal })));
+  // 'exit' の時点では stdout / stderr が読み終わっていないことがあるので、閉じた後の 'close' を待つ。
+  // 起動そのものに失敗した場合（cwd が無い等）は 'error' になるので、それも終了として扱う（リスナーが無いとテストのプロセスごと落ちる）
+  const exited = new Promise((resolve) => {
+    proc.once('close', (code, signal) => resolve({ code, signal }));
+    proc.once('error', (err) => resolve({ code: null, signal: null, error: err.message }));
+  });
   return { proc, out, exited };
 }
 
