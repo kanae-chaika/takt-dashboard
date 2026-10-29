@@ -122,7 +122,7 @@ A local web dashboard for watching [TAKT](https://github.com/nrslib/takt) runs. 
 - Execution path view (cards, ports and curves) similar to the official Web UI, including parallel fan-out and retries
 - Rate-limit interruptions, retries and provider switches shown on the step's start row
 - Detects runs whose process died while `running` and marks them "interrupted" with the step that was in flight; failed runs show the reason and the judge error log
-- Resolves provider/model for parallel children from `~/.takt/runtime.yaml` (or `config.yaml`) **as of the run's start time**, using dated backups (`runtime.yaml.bak-*`, `config.yaml.bak.*`) when present; the result is saved per run under `~/.takt/dashboard/routing/`
+- Resolves provider/model for parallel children from `~/.takt/runtime.yaml` (or `config.yaml`) **as of the run's start time**, using dated backups (`runtime.yaml.bak-*`, `config.yaml.bak.*`) when present; the result is saved per run under `~/.config/takt-dashboard/routing/`
 - Lists runs across multiple repositories and worktrees; refreshes every 2 seconds
 
 **Usage**
