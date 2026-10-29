@@ -996,6 +996,7 @@ createServer({ requireHostHeader: false }, (req, res) => {
     res.end('internal error');
   }
 }).listen(PORT, '127.0.0.1', function () { // ローカル専用。他のマシンからは繋がらない
-  for (const h of LOCAL_HOSTS) ALLOWED_HOSTS.add(h + ':' + this.address().port);
-  console.log('takt-dashboard: http://localhost:' + PORT);
+  const { port } = this.address(); // --port 0 なら OS が選んだポート
+  for (const h of LOCAL_HOSTS) ALLOWED_HOSTS.add(h + ':' + port);
+  console.log('takt-dashboard: http://localhost:' + port);
 });
