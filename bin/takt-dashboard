@@ -805,7 +805,14 @@ function demoize(st){
   return st;
 }
 let SHOW_ALL = false;
-function selectRun(v){ if (v === '__more__') { SHOW_ALL = true; lastRaw = null; tick(); return; } selectedRun = v; lastRaw = null; history.replaceState(null, '', (v ? '?run='+encodeURIComponent(v) : location.pathname) + (DEMO ? (v ? '&' : '?') + 'demo=1' : '')); tick(); }
+function selectRun(v){
+  if (v === '__more__') {
+    // 全件に切り替えたあと、閉じてしまったプルダウンを開き直す（showPicker はクリック直後の数秒だけ許される。非対応ブラウザでは何もしない）
+    SHOW_ALL = true; lastRaw = null;
+    tick().then(() => { try { document.getElementById('runsel').showPicker(); } catch {} });
+    return;
+  }
+  selectedRun = v; lastRaw = null; history.replaceState(null, '', (v ? '?run='+encodeURIComponent(v) : location.pathname) + (DEMO ? (v ? '&' : '?') + 'demo=1' : '')); tick(); }
 function taskMark(s){ return s==='running' ? '🟢' : s==='completed' ? '✅' : s==='pending' ? '⏳' : '🔴'; }
 function statusLabel(s){ return s==='interrupted' ? '中断' : s; }
 function runLabel(r){ const mark = r.status==='running' ? '🟢 ' : (r.status==='completed' ? '✅ ' : (r.status==='interrupted' ? '🟠 中断 ' : '🔴 ' + r.status + ' ')); return mark + (r.label || r.slug.replace(/^\d{8}-\d{6}-/,'')) + '  (' + jst(r.updatedAt) + ' ' + r.step + ')'; }
