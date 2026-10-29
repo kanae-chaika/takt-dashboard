@@ -846,8 +846,9 @@ function taskMark(s){ return s==='running' ? '🟢' : s==='completed' ? '✅' : 
 function statusLabel(s){ return s==='interrupted' ? '中断' : s; }
 function runLabel(r){ const mark = r.status==='running' ? '🟢 ' : (r.status==='completed' ? '✅ ' : (r.status==='interrupted' ? '🟠 中断 ' : '🔴 ' + r.status + ' ')); return mark + (r.label || r.slug.replace(/^\d{8}-\d{6}-/,'')) + '  (' + jst(r.updatedAt) + ' ' + r.step + ')'; }
 async function tick(){
-  const reqRun = selectedRun; // 応答待ちの間に run を選び直されたら、古い応答の runNotFound で選択を消さないため
+  const reqRun = selectedRun;
   const raw = await (await fetch('/api/state?' + (reqRun ? 'run='+encodeURIComponent(reqRun) : '') + (SHOW_ALL ? '&all=1' : ''))).text();
+  if (reqRun !== selectedRun) return; // 応答待ちの間に run を選び直されたら古い応答は捨てる（後から届いて選んだ run の表示や選択を上書きしないように）
   if (raw === lastRaw) {
     const el = document.getElementById('elapsed');
     if (el && lastMeta && lastMeta.status === 'running') el.textContent = fmt(Date.now() - new Date(lastMeta.startTime).getTime());
@@ -856,7 +857,7 @@ async function tick(){
   lastRaw = raw;
   const st = DEMO ? demoize(JSON.parse(raw)) : JSON.parse(raw);
   // ?run= の run が見つからない: 選択と URL の ?run= を外して最新の run を取り直す
-  if (st.runNotFound) { if (reqRun === selectedRun) { isRunMissing = true; selectRun(''); } return; }
+  if (st.runNotFound) { isRunMissing = true; selectRun(''); return; }
   const a = st.active;
   lastMeta = a ? a.meta : null;
   const sel = document.getElementById('runsel');
