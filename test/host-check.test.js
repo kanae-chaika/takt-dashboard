@@ -41,8 +41,8 @@ async function startServer(portArg) {
   try {
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('takt-dashboard が起動しない: ' + stderr)), 10000);
-      let stdout = ''; // 起動メッセージが複数の data に分かれても見つけられるよう、連結してから探す
-      child.stdout.on('data', (d) => { stdout += d; const m = stdout.match(/takt-dashboard: http:\/\/localhost:(\d+)/); if (m) { clearTimeout(timer); port = Number(m[1]); resolve(); } });
+      let stdout = ''; // 起動メッセージが複数の data に分かれても見つけられるよう、連結してから探す。ポート番号が途中で切れないよう行末（\n）まで待つ
+      child.stdout.on('data', (d) => { stdout += d; const m = stdout.match(/takt-dashboard: http:\/\/localhost:(\d+)\n/); if (m) { clearTimeout(timer); port = Number(m[1]); resolve(); } });
       child.on('exit', (code) => { clearTimeout(timer); reject(new Error('takt-dashboard が起動前に終了した (code ' + code + '): ' + stderr)); });
     });
   } catch (e) {
@@ -156,6 +156,7 @@ test('C-HOST-ALLOW: --port 0 では OS が選んだ実際のポートを許可�
   const s = await startServer(0);
   try {
     assert.notEqual(s.port, 0);
+    assert.notEqual(s.port, 7331); // --port 0 が既定ポートに読み替えられていないこと
     assert.equal((await get('/api/state', 'localhost:' + s.port, s.port)).status, 200);
     assertForbidden(await get('/api/state', 'localhost:0', s.port));
   } finally {
