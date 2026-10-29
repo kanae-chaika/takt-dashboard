@@ -29,7 +29,7 @@ takt-dashboard           # → http://localhost:7331
 
 | オプション | 説明 |
 |---|---|
-| `--roots ~/dev,~/projects` | 複数のリポジトリをまとめて見たいとき。リポジトリをまとめて置いているディレクトリをカンマ区切りで指定すると、その直下のリポジトリと worktree の `.takt/runs` を見る。環境変数 `TAKT_DASHBOARD_ROOTS` でも可 |
+| `--roots ~/dev,~/projects` | 複数のリポジトリをまとめて見たいとき。リポジトリをまとめて置いているディレクトリを指定すると、その直下のリポジトリと worktree の `.takt/runs` を見る。カンマ区切りで複数指定も可能。環境変数 `TAKT_DASHBOARD_ROOTS` でも可 |
 | `--port N` | ポート（既定 7331）。環境変数 `TAKT_DASHBOARD_PORT` でも可 |
 | `<run_dir>` | 表示する run ディレクトリを固定 |
 
@@ -115,7 +115,7 @@ Started inside a repository, it follows the worktrees takt created (from `.takt/
 
 | Option | Description |
 |---|---|
-| `--roots ~/dev,~/projects` | To watch several repositories at once: give the directories that hold your repositories (comma-separated); each one and its immediate subdirectories are checked for `.takt/runs`. Also `TAKT_DASHBOARD_ROOTS` |
+| `--roots ~/dev,~/projects` | To watch several repositories at once: give the directory that holds your repositories; its immediate subdirectories (repositories and worktrees) are checked for `.takt/runs`. Several directories can be given, comma-separated. Also `TAKT_DASHBOARD_ROOTS` |
 | `--port N` | Port (default 7331). Also `TAKT_DASHBOARD_PORT` |
 | `<run_dir>` | Pin a specific run directory |
 
