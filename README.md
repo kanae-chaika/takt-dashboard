@@ -31,8 +31,27 @@ node /path/to/takt-dashboard/bin/takt-dashboard
 | オプション | 説明 |
 |---|---|
 | `--roots a,b` | 複数のリポジトリをまとめて見たいとき。指定したディレクトリと、その直下のディレクトリの `.takt/runs` を見る。環境変数 `TAKT_DASHBOARD_ROOTS` でも可 |
-| `--port N` | ポート（既定 7331） |
+| `--port N` | ポート（既定 7331）。環境変数 `TAKT_DASHBOARD_PORT` でも可 |
 | `<run_dir>` | 表示する run ディレクトリを固定 |
+
+毎回オプションを付けたくなければ、設定ファイルに書けます（コマンドライン > 環境変数 > 設定ファイル > 既定の順で優先）。
+
+```yaml
+# ~/.config/takt-dashboard/config.yaml
+roots:
+  - ~/git
+port: 7331
+```
+
+## ダッシュボードが使うディレクトリ
+
+`~/.config/takt-dashboard/` に自分のデータを置きます。takt 本体の `~/.takt/` には書き込みません。
+
+| ファイル | 内容 |
+|---|---|
+| `config.yaml` | 上の設定（任意） |
+| `routing/<run slug>.json` | run ごとの provider 割り当ての控え（自動生成） |
+| `takt-logo.svg` | ヘッダーのロゴを差し替えたいときだけ（任意）。通常は takt 本体に同梱のロゴ（`docs/assets/takt-logo-dark.svg`）を自動で使う |
 
 ## 過去の run の provider / model を正しく出すために
 
@@ -46,7 +65,7 @@ node /path/to/takt-dashboard/bin/takt-dashboard
 ```
 
 - `runtime.yaml.bak` / `config.yaml.bak` で始まる名前なら、後ろは自由
-- 選んだ結果は `~/.takt/dashboard/routing/<run slug>.json` に保存され、以後は固定
+- 選んだ結果は `~/.config/takt-dashboard/routing/<run slug>.json` に保存され、以後は固定
 - バックアップが無い場合は現在の設定値を使います（hover で「設定からの推定」と表示）
 
 ## 注意
@@ -88,8 +107,10 @@ Started inside a repository, it follows the worktrees takt created (from `.takt/
 | Option | Description |
 |---|---|
 | `--roots a,b` | To watch several repositories at once: each directory and its immediate subdirectories are checked for `.takt/runs`. Also `TAKT_DASHBOARD_ROOTS` |
-| `--port N` | Port (default 7331) |
+| `--port N` | Port (default 7331). Also `TAKT_DASHBOARD_PORT` |
 | `<run_dir>` | Pin a specific run directory |
+
+Defaults can be set in `~/.config/takt-dashboard/config.yaml` (`roots:` list and `port:`); command line > environment > config file > defaults. The dashboard keeps its own data there (`routing/` snapshots, optional `takt-logo.svg` override) and never writes into takt's `~/.takt/`. The header logo is read from the installed takt package (`docs/assets/takt-logo-dark.svg`).
 
 **Caveats**: TAKT's run log format is experimental and may change; verified against takt 0.73.0. Run data lives in each worktree's `.takt/runs/`, so deleting a task in `takt list` removes it from the dashboard too. Binds to localhost only, no authentication.
 

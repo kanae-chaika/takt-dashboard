@@ -13,11 +13,37 @@ import os from 'node:os';
 
 const HOME = os.homedir();
 const args = process.argv.slice(2);
+// ---------- 設定 ----------
+// ダッシュボード自身のデータは ~/.config/takt-dashboard/ に置く（takt 本体の ~/.takt/ とは分ける）:
+//   config.yaml        roots / port（任意）
+//   routing/<run>.json run ごとの provider 割り当ての控え（自動生成）
+//   takt-logo.svg      ヘッダーのロゴを差し替えたいとき（任意。通常は takt 本体同梱のロゴを使う）
+const CFG_DIR = path.join(HOME, '.config', 'takt-dashboard');
+const expandHome = (p) => path.resolve(p.replace(/^~(?=\/|$)/, HOME));
+// config.yaml は roots（リスト or , 区切り）と port だけの簡単な形式。yaml ライブラリ無しで読む
+function loadConfig() {
+  const cfg = { roots: [], port: null };
+  let text = ''; try { text = readFileSync(path.join(CFG_DIR, 'config.yaml'), 'utf8'); } catch { return cfg; }
+  let inRoots = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/#.*$/, '').trimEnd();
+    if (!line.trim()) continue;
+    let m;
+    if ((m = line.match(/^port:\s*(\d+)/))) { cfg.port = Number(m[1]); inRoots = false; continue; }
+    if ((m = line.match(/^roots:\s*(.*)$/))) { inRoots = true; if (m[1].trim()) cfg.roots.push(...m[1].split(/[,]/).map((x) => x.trim()).filter(Boolean)); continue; }
+    if (inRoots && (m = line.match(/^\s+-\s*(.+)$/))) { cfg.roots.push(m[1].trim().replace(/^['"]|['"]$/g, '')); continue; }
+    inRoots = false;
+  }
+  return cfg;
+}
+const CONFIG = loadConfig();
 const optVal = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
-const PORT = Number(optVal('--port') ?? 7331);
+// 優先順: コマンドライン > 環境変数 > config.yaml > 既定
+const PORT = Number(optVal('--port') ?? process.env.TAKT_DASHBOARD_PORT ?? CONFIG.port ?? 7331);
 const FIXED_RUN = args.find((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--'))) ?? null;
-// run を探すディレクトリ。カレントディレクトリと ~/.takt に加えて、--roots / TAKT_DASHBOARD_ROOTS（, か : 区切り）で指定したものと、その直下のディレクトリ
-const EXTRA_ROOTS = (optVal('--roots') ?? process.env.TAKT_DASHBOARD_ROOTS ?? '').split(/[,:]/).map((s) => s.trim()).filter(Boolean).map((p) => path.resolve(p.replace(/^~(?=\/|$)/, HOME)));
+// run を探すディレクトリ。カレントディレクトリと ~/.takt に加えて、--roots / TAKT_DASHBOARD_ROOTS（, か : 区切り）/ config.yaml の roots と、その直下のディレクトリ
+const rootsSpec = optVal('--roots') ?? process.env.TAKT_DASHBOARD_ROOTS;
+const EXTRA_ROOTS = (rootsSpec !== undefined ? rootsSpec.split(/[,:]/) : CONFIG.roots).map((s) => s.trim()).filter(Boolean).map(expandHome);
 
 // ---------- run 探索 ----------
 function listDirs(p) {
@@ -145,11 +171,11 @@ function loadConfigRouting(cfg) {
 
 // ---------- run 開始時点の設定 ----------
 // yaml を後から変えると過去の run の表示まで変わるのを防ぐ。
-// (1) ~/.takt/dashboard/routing/<run slug>.json に保存済みならそれを使う（以後 yaml を変えても変わらない）
+// (1) ~/.config/takt-dashboard/routing/<run slug>.json に保存済みならそれを使う（以後 yaml を変えても変わらない）
 // (2) 無ければ、~/.takt の runtime.yaml.bak-* / config.yaml.bak.* から run 開始時点で有効だったものを選ぶ。
 //     バックアップの mtime は「その内容が置き換えられた時刻」なので、mtime が run 開始より後のもののうち最も早いものが当時の設定。
 //     該当が無ければ現在の yaml。選んだ結果を (1) に保存する
-const SNAP_DIR = path.join(HOME, '.takt', 'dashboard', 'routing');
+const SNAP_DIR = path.join(CFG_DIR, 'routing');
 function routingHistory() {
   const dir = path.join(HOME, '.takt');
   const list = (prefix, parse) => {
@@ -846,9 +872,11 @@ createServer((req, res) => {
     return;
   }
   if (url.pathname === '/takt-logo.svg') {
-    // 公式 Web UI（takt ui）の /takt-logo.svg を ~/.takt/dashboard/ に控えたもの。無ければ 404 にして文字の見出しにフォールバック
-    const logo = path.join(HOME, '.takt', 'dashboard', 'takt-logo.svg');
-    if (!existsSync(logo)) { res.writeHead(404); res.end(); return; }
+    // ロゴは takt 本体に同梱の docs/assets/takt-logo-dark.svg（公式 Web UI が /takt-logo.svg として配信しているもの）を読む。
+    // ~/.config/takt-dashboard/takt-logo.svg があればそちらを優先。どちらも無ければ 404 にして文字の見出しにフォールバック
+    const pkg = taktPackageDir();
+    const logo = [path.join(CFG_DIR, 'takt-logo.svg'), ...(pkg ? [path.join(pkg, 'docs', 'assets', 'takt-logo-dark.svg')] : [])].find((p) => existsSync(p));
+    if (!logo) { res.writeHead(404); res.end(); return; }
     res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'max-age=86400' });
     res.end(readFileSync(logo));
     return;
