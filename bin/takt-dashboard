@@ -603,7 +603,7 @@ const HTML = `<!DOCTYPE html>
   .rz:hover::after { background:var(--dim); }
   .pathsec { position:relative; }
   .pathsec h2 { position:absolute; top:8px; left:14px; margin:0; } /* 見出しを浮かせて縦の場所を取らない */
-  .path { position:relative; overflow:auto; padding:4px 8px 2px; }
+  .path { position:relative; overflow:auto; padding:18px 8px 2px; } /* 上は absolute の見出しぶん空ける */
   .lane { position:relative; display:flex; align-items:center; gap:48px; width:max-content; }
   .node { position:relative; background:#0d110f; border:1px solid var(--line); border-radius:8px; padding:6px 12px; min-width:140px; cursor:default; line-height:1.45; }
   .node.has-j { cursor:pointer; }
@@ -782,7 +782,18 @@ viewerEl.addEventListener('mousedown', e => { viewerDown = e.target; });
 viewerEl.addEventListener('click', e => { if (e.target === viewerEl && viewerDown === viewerEl) closeViewer(); });
 let lastRaw = null, lastMeta = null, MAX = null;
 let selectedRun = new URLSearchParams(location.search).get('run') || '';
-function selectRun(v){ selectedRun = v; lastRaw = null; history.replaceState(null, '', v ? '?run='+encodeURIComponent(v) : location.pathname); tick(); }
+// ?demo=1: スクリーンショット用。タスク名・リポジトリ名・ブランチ・Issue 番号を仮の値にし、エージェント出力とキューは出さない
+const DEMO = new URLSearchParams(location.search).get('demo') === '1';
+function demoize(st){
+  if (st.active) {
+    st.repo = 'my-repo'; st.active.meta.runSlug = 'sample-task';
+    if (st.currentTask) Object.assign(st.currentTask, { summary: 'Issue #123: サンプルタスク', name: 'sample-task', branch: 'takt/123-sample-task', issue: 123, raw: '' });
+  }
+  (st.runs || []).forEach((r, i) => { r.label = (r.label && r.label.startsWith('UI: ') ? 'UI: ' : '') + 'サンプルタスク ' + (i + 1); });
+  st.lastOutput = null; st.tasksPath = null;
+  return st;
+}
+function selectRun(v){ selectedRun = v; lastRaw = null; history.replaceState(null, '', (v ? '?run='+encodeURIComponent(v) : location.pathname) + (DEMO ? (v ? '&' : '?') + 'demo=1' : '')); tick(); }
 function taskMark(s){ return s==='running' ? '🟢' : s==='completed' ? '✅' : s==='pending' ? '⏳' : '🔴'; }
 function statusLabel(s){ return s==='interrupted' ? '中断' : s; }
 function runLabel(r){ const mark = r.status==='running' ? '🟢 ' : (r.status==='completed' ? '✅ ' : (r.status==='interrupted' ? '🟠 中断 ' : '🔴 ' + r.status + ' ')); return mark + (r.label || r.slug.replace(/^\d{8}-\d{6}-/,'')) + '  (' + jst(r.updatedAt) + ' ' + r.step + ')'; }
@@ -794,7 +805,7 @@ async function tick(){
     return;
   }
   lastRaw = raw;
-  const st = JSON.parse(raw);
+  const st = DEMO ? demoize(JSON.parse(raw)) : JSON.parse(raw);
   const a = st.active;
   lastMeta = a ? a.meta : null;
   const sel = document.getElementById('runsel');
@@ -842,14 +853,14 @@ async function tick(){
       <div id="path" class="scroll path">\${pathHtml(pathModel(tl, m))}</div>
     </section>
 
-    <section class="c3">
+    \${DEMO ? '' : \`<section class="c3">
       <h2>最新のエージェント出力\${st.lastOutput ? ' — '+esc(st.lastOutput.step)+' ('+jst(st.lastOutput.ts)+')' : ''}</h2>
       <pre id="out" class="scroll">\${esc(st.lastOutput ? st.lastOutput.content.split('\\n').slice(-60).join('\\n') : '(まだありません)')}</pre>
     </section>
     <section class="c3">
       <h2>タスクキュー\${st.tasksPath ? ' — '+esc(st.tasksPath.replace(/^\\/Users\\/[^/]+/, '~')) : ''}</h2>
       <pre id="tasks" class="scroll" style="max-height:none">\${esc(st.currentTask ? st.currentTask.raw : '(この run に対応するキューはありません)')}</pre>
-    </section>\`;
+    </section>\`}\`;
   restoreScroll(keep, winY);
   drawEdges();
 }
