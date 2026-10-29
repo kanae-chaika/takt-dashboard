@@ -37,16 +37,21 @@ async function startServer() {
   const child = spawn(process.execPath, [BIN, '--port', String(port)], { cwd: REPO, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let stderr = '';
   child.stderr.on('data', (d) => { stderr += d; });
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('takt-dashboard が起動しない: ' + stderr)), 10000);
-    child.stdout.on('data', (d) => { if (String(d).includes('takt-dashboard: http://localhost:')) { clearTimeout(timer); resolve(); } });
-    child.on('exit', (code) => { clearTimeout(timer); reject(new Error('takt-dashboard が起動前に終了した (code ' + code + '): ' + stderr)); });
-  });
+  try {
+    await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('takt-dashboard が起動しない: ' + stderr)), 10000);
+      child.stdout.on('data', (d) => { if (String(d).includes('takt-dashboard: http://localhost:')) { clearTimeout(timer); resolve(); } });
+      child.on('exit', (code) => { clearTimeout(timer); reject(new Error('takt-dashboard が起動前に終了した (code ' + code + '): ' + stderr)); });
+    });
+  } catch (e) {
+    await stopServer({ child }); // 起動待ちで失敗しても子プロセスを残さない（残るとテストが終わらない）
+    throw e;
+  }
   return { child, port };
 }
 
 async function stopServer(server) {
-  if (!server || server.child.exitCode !== null) return;
+  if (!server || server.child.exitCode !== null || server.child.signalCode !== null) return; // シグナルで終了済みなら exitCode は null のまま
   const exited = new Promise((resolve) => server.child.once('exit', resolve));
   server.child.kill('SIGTERM');
   await exited;

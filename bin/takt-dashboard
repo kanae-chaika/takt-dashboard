@@ -942,7 +942,9 @@ if (FIXED_RUN) {
 }
 
 // DNS rebinding 対策: 外部サイトのドメインを 127.0.0.1 に向けられても、Host が許可リストに無ければ応答しない
-const ALLOWED_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'].flatMap((h) => [h, h + ':' + PORT]));
+// ポート付きの形は listen 後に実際のポートで足す（--port 0 で OS が選んだポートでも合うように）
+const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
+const ALLOWED_HOSTS = new Set(LOCAL_HOSTS);
 
 // requireHostHeader: false — 既定（true）だと Host の無い要求は Node がハンドラより前に 400 を返すので、ハンドラで 403 にする
 createServer({ requireHostHeader: false }, (req, res) => {
@@ -985,4 +987,7 @@ createServer({ requireHostHeader: false }, (req, res) => {
     res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
     res.end('internal error');
   }
-}).listen(PORT, '127.0.0.1', () => console.log('takt-dashboard: http://localhost:' + PORT)); // ローカル専用。他のマシンからは繋がらない
+}).listen(PORT, '127.0.0.1', function () { // ローカル専用。他のマシンからは繋がらない
+  for (const h of LOCAL_HOSTS) ALLOWED_HOSTS.add(h + ':' + this.address().port);
+  console.log('takt-dashboard: http://localhost:' + PORT);
+});
