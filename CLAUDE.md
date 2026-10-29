@@ -59,7 +59,7 @@ node --test test/*.test.js
 - `engines.node >= 20`。`node:test` を使うので別のテストランナーは入れない
 - **CI は無い。push 前にローカルでテストを通す**
 - lint / formatter は無い。シングルクォート・セミコロンあり・1 行に詰める既存の書き方に揃える
-- テストは実環境の `~/.takt` / `~/.config/takt-dashboard` を読まないよう、`HOME` と cwd を一時ディレクトリにして起動する（`test/takt-dashboard.test.js` の `makeSandbox` / `spawnDashboard` を使う）
+- テストは実環境の `~/.takt` / `~/.config/takt-dashboard` を読まないよう、`HOME` と cwd を一時ディレクトリにして起動する（起動・停止は `test/helpers.js` の `startDashboard` / `stopDashboard` を使う。`--port 0` で起動し、起動メッセージから実際のポートを読む）
 - テストで run を作るときは `<root>/.takt/runs/<slug>/` に `meta.json` を置く（必須はこれだけ）。`logs/*.jsonl`・`reports/*.md` はそのテストで使う場合だけ作る
 
 ## コードの書き方
