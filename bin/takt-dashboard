@@ -949,8 +949,17 @@ if (FIXED_RUN) {
   }
 }
 
-createServer((req, res) => {
+// DNS rebinding 対策: 外部サイトのドメインを 127.0.0.1 に向けられても、Host が許可リストに無ければ応答しない
+const ALLOWED_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'].flatMap((h) => [h, h + ':' + PORT]));
+
+// requireHostHeader: false — 既定（true）だと Host の無い要求は Node がハンドラより前に 400 を返すので、ハンドラで 403 にする
+createServer({ requireHostHeader: false }, (req, res) => {
   try {
+    if (!ALLOWED_HOSTS.has((req.headers.host ?? '').toLowerCase())) {
+      res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end('forbidden');
+      return;
+    }
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname === '/api/state') {
       // 例外時に 500 を返せるよう、本文を作ってからヘッダーを書く
