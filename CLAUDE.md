@@ -60,7 +60,7 @@ node --test test/*.test.js
 - **CI は無い。push 前にローカルでテストを通す**
 - lint / formatter は無い。シングルクォート・セミコロンあり・1 行に詰める既存の書き方に揃える
 - テストは実環境の `~/.takt` / `~/.config/takt-dashboard` を読まないよう、`HOME` と cwd を一時ディレクトリにして起動する（`test/takt-dashboard.test.js` の `makeSandbox` / `spawnDashboard` を使う）
-- テストで run を作るときも `<root>/.takt/runs/<slug>/` に `meta.json`・`logs/*.jsonl`・`reports/*.md` の形にする
+- テストで run を作るときは `<root>/.takt/runs/<slug>/` に `meta.json` を置く（必須はこれだけ）。`logs/*.jsonl`・`reports/*.md` はそのテストで使う場合だけ作る
 
 ## コードの書き方
 
