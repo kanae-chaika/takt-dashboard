@@ -28,9 +28,10 @@ function freePort() {
   });
 }
 
-async function startServer() {
-  let port = await freePort();
-  while (port === 7331) port = await freePort(); // 既定ポートと同じだと「ポートを 7331 で固定した誤実装」を区別できない
+// portArg を省くと空きポートを選んで渡す。0 を渡すと OS が選ぶ。どちらも起動メッセージから実際のポートを読む
+async function startServer(portArg) {
+  let port = portArg;
+  if (port === undefined) { port = await freePort(); while (port === 7331) port = await freePort(); } // 既定ポートと同じだと「ポートを 7331 で固定した誤実装」を区別できない
   const env = { ...process.env, HOME };
   delete env.TAKT_DASHBOARD_ROOTS;
   delete env.TAKT_DASHBOARD_PORT;
@@ -41,7 +42,7 @@ async function startServer() {
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('takt-dashboard が起動しない: ' + stderr)), 10000);
       let stdout = ''; // 起動メッセージが複数の data に分かれても見つけられるよう、連結してから探す
-      child.stdout.on('data', (d) => { stdout += d; if (stdout.includes('takt-dashboard: http://localhost:')) { clearTimeout(timer); resolve(); } });
+      child.stdout.on('data', (d) => { stdout += d; const m = stdout.match(/takt-dashboard: http:\/\/localhost:(\d+)/); if (m) { clearTimeout(timer); port = Number(m[1]); resolve(); } });
       child.on('exit', (code) => { clearTimeout(timer); reject(new Error('takt-dashboard が起動前に終了した (code ' + code + '): ' + stderr)); });
     });
   } catch (e) {
@@ -59,9 +60,9 @@ async function stopServer(server) {
 }
 
 // host が null のときは Host ヘッダーを付けずに送る（setHost: false）
-function get(requestPath, host) {
+function get(requestPath, host, port = server.port) {
   return new Promise((resolve, reject) => {
-    const opts = { host: '127.0.0.1', port: server.port, path: requestPath, method: 'GET', agent: false };
+    const opts = { host: '127.0.0.1', port, path: requestPath, method: 'GET', agent: false };
     if (host === null) opts.setHost = false;
     else opts.headers = { host };
     const req = http.request(opts, (res) => {
@@ -148,6 +149,17 @@ test('C-HOST-ALLOW: Host の大文字小文字は区別しない', async () => {
   for (const host of ['LOCALHOST:' + server.port, 'LocalHost']) {
     const res = await get('/api/state', host);
     assert.equal(res.status, 200, host);
+  }
+});
+
+test('C-HOST-ALLOW: --port 0 では OS が選んだ実際のポートを許可し、:0 は許可しない', async () => {
+  const s = await startServer(0);
+  try {
+    assert.notEqual(s.port, 0);
+    assert.equal((await get('/api/state', 'localhost:' + s.port, s.port)).status, 200);
+    assertForbidden(await get('/api/state', 'localhost:0', s.port));
+  } finally {
+    await stopServer(s);
   }
 });
 
