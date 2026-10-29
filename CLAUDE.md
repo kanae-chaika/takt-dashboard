@@ -7,11 +7,8 @@
 
 | パス | 内容 |
 |---|---|
-| `bin/takt-dashboard` | サーバー（Node.js）。拡張子なし・ESM。run の探索・ログの解釈・`/api/state` の組み立て・HTTP 配信 |
-| `bin/ui/index.html` `app.css` `app.js` | 画面。サーバーが `index.html` の `<link>` と `<script src>` をファイルの中身に置き換え、1 枚の HTML として `/` で返す（ルートは `/` だけ。`npm link` 中はリロードで反映） |
+| `bin/takt-dashboard` | 本体。サーバー（Node.js）とブラウザ側（`HTML` 定数に埋め込んだ HTML / CSS / JS）が 1 ファイルに入っている。拡張子なし・ESM |
 | `test/*.test.js` | `node:test` のテスト。`bin/takt-dashboard` を子プロセスで起動し、HTTP 応答と終了コードで確認する |
-| `eslint.config.js` | ESLint（検査のみ） |
-| `.github/workflows/ci.yml` | CI。push / PR ごとに lint とテスト（Node 20 / 22） |
 | `docs/` | README 用のスクリーンショットのみ |
 | `.coderabbit.yaml` | CodeRabbit の設定（日本語・assertive・draft PR もレビュー） |
 
@@ -37,33 +34,31 @@
 
 ## 設計方針（変えない）
 
-- **実行時の依存ライブラリなし。** Node.js 標準ライブラリだけで動かす（`package.json` に dependencies を足さない。devDependencies は可）。yaml（`config.yaml` / `runtime.yaml` / `tasks.yaml`）も自前の簡易パースで読む
-- **配信は `/` だけ。** 画面は `bin/ui/` の 3 ファイルだが、ブラウザには 1 枚の HTML にして返す。静的ファイルのルートを増やさない
+- **依存ライブラリなし。** Node.js 標準ライブラリだけで動かす（`package.json` に dependencies を足さない）。yaml（`config.yaml` / `runtime.yaml` / `tasks.yaml`）も自前の簡易パースで読む
+- **1 ファイル。** サーバーもブラウザ側のコードも `bin/takt-dashboard` に置く
 - **読むだけ。** takt 本体の `~/.takt/` には書き込まない。ダッシュボード自身のデータは `~/.config/takt-dashboard/` に置く
 - **ローカル専用。** `127.0.0.1` にだけ bind する。認証はない
 - **run 開始時点の設定を使う。** 並列の子の provider / model は run ごとに `routing/<run slug>.json` に保存し、以後 yaml を変えても過去の表示を変えない
 - **`?run=` で指定した run が無いときに別の run へフォールバックしない。** `runNotFound` を返し、URL と表示を食い違わせない
 - ハンドラ内の例外でプロセスを落とさない（500 を返す）
 
-## 画面（bin/ui）の前提
+## 画面（`HTML` 定数）の前提
 
-- **2 秒ごとに `/api/state` を取り、応答が前回と違えば画面全体を描き直す**（`app.js` の `tick()`）。UI を足すときは、2 秒後の再描画で消えないか・守る仕組みが要るかを考える。選択中の run は `selGen`（選択の世代番号）で古い応答を捨て、スクロール位置は `restoreScroll` で戻している
-- `index.html` の `onclick` から呼ぶ関数があるので、`app.js` はモジュールではなくグローバルな script として読む（ESLint の設定もそれに合わせている）
-- `app.css` のスタイルは勝手に変えない。見た目が変わる変更は、手を動かす前にユーザーに確認する
+- **2 秒ごとに `/api/state` を取り、応答が前回と違えば画面全体を描き直す**（`tick()`）。UI を足すときは、2 秒後の再描画で消えないか・守る仕組みが要るかを考える。選択中の run は `selGen`（選択の世代番号）で古い応答を捨て、スクロール位置は `restoreScroll` で戻している
+- ブラウザ側のコードはテンプレートリテラル内の文字列なので、`${}` は `\${`、正規表現の `\d` などは `\\d` と二重にエスケープする。エスケープ漏れは実行時まで気づけない（`\d` が `d` になる）ので、正規表現を書いたら表示で確認する
+- `<style>` 内の CSS も「既存のスタイルを勝手に変えない」の対象。見た目が変わる変更は、手を動かす前にユーザーに確認する
 - `?demo=1` を付けると `demoize()` がリポジトリ名・タスク名・ブランチをサンプル値に置き換える。README のスクリーンショットを撮るときはこれを使い、実名を写さない
 
 ## 開発
 
 ```bash
-npm link           # takt-dashboard コマンドが clone 先を指す
-npm install        # テストと ESLint 用
-npm test
-npm run lint
+npm link                     # takt-dashboard コマンドが clone 先を指す
+node --test test/*.test.js
 ```
 
 - `engines.node >= 20`。`node:test` を使うので別のテストランナーは入れない
-- **push 前に `npm test` と `npm run lint` を通す。** CI でも同じものが走る
-- ESLint は検査だけ。整形ツール（Prettier 等）は入れない。シングルクォート・セミコロンあり・1 行に詰める既存の書き方に揃える。`catch {}` と正規表現内の連続スペースは意図的な書き方なのでルールで許可している
+- **CI は無い。push 前にローカルでテストを通す**
+- lint / formatter は無い。シングルクォート・セミコロンあり・1 行に詰める既存の書き方に揃える
 - テストは実環境の `~/.takt` / `~/.config/takt-dashboard` を読まないよう、`HOME` と cwd を一時ディレクトリにして起動する（`test/takt-dashboard.test.js` の `makeSandbox` / `spawnDashboard` を使う）
 - テストで run を作るときも `<root>/.takt/runs/<slug>/` に `meta.json`・`logs/*.jsonl`・`reports/*.md` の形にする
 
@@ -76,10 +71,10 @@ npm run lint
 ## README
 
 - 日本語と英語（`## English` 以下）の 2 部構成。挙動・オプション・設定ファイルを変えたら**両方**を更新する
-- 画面の文言を README や Issue / PR に書くときは、`bin/ui/` の実際の文言を確認してから書く
+- 画面の文言を README や Issue / PR に書くときは、`bin/takt-dashboard` の実際の文言を確認してから書く
 
 ## コミット・PR
 
-- コミットメッセージは `fix:` / `feat:` / `docs:` / `chore:` / `refactor:` / `ci:` + 日本語の説明。1 行目だけで「何を・なぜ」が分かるようにする（例: `fix: 127.0.0.1 にだけ bind する（README の「ローカル専用」の記述どおりに）`）
+- コミットメッセージは `fix:` / `feat:` / `docs:` / `chore:` + 日本語の説明。1 行目だけで「何を・なぜ」が分かるようにする（例: `fix: 127.0.0.1 にだけ bind する（README の「ローカル専用」の記述どおりに）`）
 - `main` への直接 push はしない。PR を経由する
-- PR は CI（lint・テスト）と CodeRabbit（assertive）が見る。指摘には対応するか、対応しない理由を返す
+- PR は CodeRabbit（assertive）がレビューする。指摘には対応するか、対応しない理由を返す
