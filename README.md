@@ -29,11 +29,11 @@ takt-dashboard           # → http://localhost:7331
 
 | オプション | 説明 |
 |---|---|
-| `--roots ~/dev,~/projects` | 複数のリポジトリをまとめて見たいとき。リポジトリをまとめて置いているディレクトリを指定すると、その直下のリポジトリと worktree の `.takt/runs` を見る。カンマ区切りで複数指定できる。環境変数 `TAKT_DASHBOARD_ROOTS` でも指定できる |
-| `--port N` | ポート（既定 7331）。環境変数 `TAKT_DASHBOARD_PORT` でも指定できる |
+| `--roots ~/dev,~/projects` | 複数のリポジトリをまとめて見たいとき。リポジトリをまとめて置いているディレクトリを指定すると、その直下のリポジトリと worktree の `.takt/runs` を見る。カンマ区切りで複数指定できる |
+| `--port N` | ポート（既定 7331） |
 | `<run_dir>` | 表示する run ディレクトリを固定 |
 
-毎回オプションを付けたくなければ、設定ファイルに書けます（コマンドライン > 環境変数 > 設定ファイル > 既定の順で優先）。
+毎回オプションを付けたくなければ、環境変数（`TAKT_DASHBOARD_ROOTS` / `TAKT_DASHBOARD_PORT`）か設定ファイルに書けます。優先順はコマンドライン > 環境変数 > 設定ファイル > 既定です。
 
 ```yaml
 # ~/.config/takt-dashboard/config.yaml
@@ -115,11 +115,11 @@ Started inside a repository, it follows the worktrees takt created (from `.takt/
 
 | Option | Description |
 |---|---|
-| `--roots ~/dev,~/projects` | To watch several repositories at once: give the directory that holds your repositories; its immediate subdirectories (repositories and worktrees) are checked for `.takt/runs`. Several directories can be given, comma-separated. Also `TAKT_DASHBOARD_ROOTS` |
-| `--port N` | Port (default 7331). Also `TAKT_DASHBOARD_PORT` |
+| `--roots ~/dev,~/projects` | To watch several repositories at once: give the directory that holds your repositories; its immediate subdirectories (repositories and worktrees) are checked for `.takt/runs`. Several directories can be given, comma-separated |
+| `--port N` | Port (default 7331) |
 | `<run_dir>` | Pin a specific run directory |
 
-Defaults can be set in `~/.config/takt-dashboard/config.yaml` (`roots:` list and `port:`); command line > environment > config file > defaults. The dashboard keeps its own data there (`routing/` snapshots, optional `takt-logo.svg` override) and never writes into takt's `~/.takt/`. The header logo is read from the installed takt package (`docs/assets/takt-logo-dark.svg`).
+Both can also be set with environment variables (`TAKT_DASHBOARD_ROOTS`, `TAKT_DASHBOARD_PORT`) or in `~/.config/takt-dashboard/config.yaml` (`roots:` list and `port:`); command line > environment > config file > defaults. The dashboard keeps its own data there (`routing/` snapshots, optional `takt-logo.svg` override) and never writes into takt's `~/.takt/`. The header logo is read from the installed takt package (`docs/assets/takt-logo-dark.svg`).
 
 **Caveats**: TAKT's run log format is experimental and may change; verified against takt 0.73.0. Run data lives in each worktree's `.takt/runs/`, so deleting a task in `takt list` removes it from the dashboard too. Binds to localhost only, no authentication.
 
