@@ -8,7 +8,6 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import net from 'node:net';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 
@@ -20,18 +19,18 @@ const REPO = path.join(ROOT, 'repo');
 const RUN = path.join(REPO, '.takt', 'runs', '20261029-100000-host');
 const REPORT = 'host-check の plan レポート\n';
 
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const srv = net.createServer();
-    srv.on('error', reject);
-    srv.listen(0, '127.0.0.1', () => { const { port } = srv.address(); srv.close(() => resolve(port)); });
-  });
+// --port 0 で起動し、OS が選んだポートを起動メッセージから読む（空きポートを先に調べてから渡すと、その間に別のプロセスに取られることがある）
+// 7331（既定ポート）に当たったら取り直す。既定ポートと同じだと「ポートを 7331 で固定した誤実装」を区別できない
+async function startServer() {
+  for (;;) {
+    const s = await launchServer();
+    if (s.port !== 7331) return s;
+    await stopServer(s);
+  }
 }
 
-// portArg を省くと空きポートを選んで渡す。0 を渡すと OS が選ぶ。どちらも起動メッセージから実際のポートを読む
-async function startServer(portArg) {
-  let port = portArg;
-  if (port === undefined) { port = await freePort(); while (port === 7331) port = await freePort(); } // 既定ポートと同じだと「ポートを 7331 で固定した誤実装」を区別できない
+async function launchServer() {
+  let port = 0;
   const env = { ...process.env, HOME };
   delete env.TAKT_DASHBOARD_ROOTS;
   delete env.TAKT_DASHBOARD_PORT;
@@ -153,7 +152,7 @@ test('C-HOST-ALLOW: Host の大文字小文字は区別しない', async () => {
 });
 
 test('C-HOST-ALLOW: --port 0 では OS が選んだ実際のポートを許可し、:0 は許可しない', async () => {
-  const s = await startServer(0);
+  const s = await launchServer();
   try {
     assert.notEqual(s.port, 0);
     assert.notEqual(s.port, 7331); // --port 0 が既定ポートに読み替えられていないこと
