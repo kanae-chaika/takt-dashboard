@@ -595,17 +595,18 @@ test('run が完了してタスク欄に同じ判定が増えても、フォー�
 test('レポートの取得を待つ間に別の判定を開いたら、遅れて届いたレポートで中身を上書きせず、閉じると判定を開いた要素に戻る', async () => {
   const page = await renderedPage();
   const d = page.document;
-  // plan.md の取得だけ止めておき、後から応答を返す
+  // レポートの取得だけ止めておき、後から応答を返す（HTTP は使わず、本文の読み取りまで手元で完結させる）
   let release; const held = new Promise((r) => { release = r; });
+  const text = Promise.resolve('古いレポート');
   const realFetch = page.ctx.fetch;
-  page.ctx.fetch = (u) => u.startsWith('/api/report') ? held.then(() => realFetch(u)) : realFetch(u);
+  page.ctx.fetch = (u) => u.startsWith('/api/report') ? held.then(() => ({ text: () => text })) : realFetch(u);
   press(page, d.querySelector('#tl .rep[data-rel="plan.md"]'), 'Enter');
   const judge = d.querySelector('#tl .judge[data-ji]');
   press(page, judge, 'Enter');
   assert.equal(page.viewer.open, true);
   assert.equal(title(page), 'plan の判定（iter 1）');
   release();
-  await new Promise((r) => setTimeout(r, 200));
+  await held; await text; await settle(); // openReport の await（応答・本文）の後の処理まで終わらせる
   assert.equal(title(page), 'plan の判定（iter 1）', '古いレポートの応答で上書きされない');
   pressEscape(page);
   await settle(); await settle();
