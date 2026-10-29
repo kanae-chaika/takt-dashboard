@@ -13,15 +13,16 @@ export function spawnDashboard({ cwd, home, args = [], env = {} }) {
   delete e.TAKT_DASHBOARD_PORT;
   Object.assign(e, env);
   const proc = spawn(process.execPath, [BIN, '--port', '0', ...args], { cwd, env: e, stdio: ['ignore', 'pipe', 'pipe'] });
-  const out = { stdout: '', stderr: '' };
-  proc.stdout.on('data', (d) => { out.stdout += d; });
-  proc.stderr.on('data', (d) => { out.stderr += d; });
   // 'exit' の時点では stdout / stderr が読み終わっていないことがあるので、閉じた後の 'close' を待つ。
   // 起動そのものに失敗した場合（cwd が無い等）は 'error' になるので、それも終了として扱う（リスナーが無いとテストのプロセスごと落ちる）
   const exited = new Promise((resolve) => {
     proc.once('close', (code, signal) => resolve({ code, signal }));
     proc.once('error', (err) => resolve({ code: null, signal: null, error: err.message }));
   });
+  // 起動に失敗するとパイプが作られず stdout / stderr が無いことがあるので、ある場合だけ読む
+  const out = { stdout: '', stderr: '' };
+  proc.stdout?.on('data', (d) => { out.stdout += d; });
+  proc.stderr?.on('data', (d) => { out.stderr += d; });
   return { proc, out, exited };
 }
 
@@ -32,7 +33,7 @@ export async function startDashboard(opts) {
     const port = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('起動待ちがタイムアウト: ' + JSON.stringify(d.out))), STARTUP_TIMEOUT_MS);
       // 起動メッセージが複数の data に分かれても見落とさないよう、連結した出力を行末（\n）まで受け取ってから読む
-      d.proc.stdout.on('data', () => { const m = d.out.stdout.match(/takt-dashboard: http:\/\/localhost:(\d+)\n/); if (m) { clearTimeout(timer); resolve(Number(m[1])); } });
+      d.proc.stdout?.on('data', () => { const m = d.out.stdout.match(/takt-dashboard: http:\/\/localhost:(\d+)\n/); if (m) { clearTimeout(timer); resolve(Number(m[1])); } });
       d.exited.then((r) => { clearTimeout(timer); reject(new Error('起動前に終了: ' + JSON.stringify({ ...r, ...d.out }))); });
     });
     return { ...d, port, base: 'http://127.0.0.1:' + port };
