@@ -237,6 +237,9 @@ function timeline(runDir, routing) {
   // stages は phase_judge_stage.response（structured_output の JSON。reason を含む）
   const judges = {};
   const lastJudgeKey = {};
+  // step#iter → エラーの記録（phase_complete / step_complete の status が done 以外のときの error / content）。失敗行・error 行のクリックで表示する
+  const errors = {};
+  const noteError = (key, e, ts) => { const t = String(e.error ?? e.content ?? '').trim(); if (!t) return; (errors[key] ?? (errors[key] = [])).push({ ts, phase: e.phaseName ?? (e.type === 'step_complete' ? 'step' : e.type), status: e.status ?? '', text: t }); };
   // 並列の子は、親がレート上限で中断 → リトライすると同じ iteration のまま execute から走り直す（takt 0.73 で確認）。
   // 2 回目以降の execute 開始を別の試行として key に @n を付け、開始行とフェーズ行を 1 回目と分ける
   const attempts = {};
@@ -288,11 +291,13 @@ function timeline(runDir, routing) {
       if (pendingSwitch[st]) { subRow.switchFrom = pendingSwitch[st].from; delete pendingSwitch[st]; }
       rows.push(subRow);
     } else if (t === 'phase_complete') {
+      if (st && e.status && e.status !== 'done') noteError(key, e, ts);
       // 並列の子は execute / report / judge の 3 フェーズとも終了を行にする（公式 UI の ITER LOG と同じ粒度）
       if (!started.has(key)) rows.push({ ts, kind: 'phase', key, step: st, phase: e.phaseName, status: e.status, error: e.status === 'error' ? String(e.error ?? e.content ?? '') : null });
       if (e.phaseName === 'execute' && e.content) lastOutput = { ts, step: st, content: String(e.content) };
     } else if (t === 'step_complete') {
       const lim = e.status === 'rate_limited' ? (String(e.content ?? '').match(/rateLimitInfo:\s*provider=([\w-]+)/)?.[1] ?? null) : null;
+      if (e.status && e.status !== 'done') noteError(key, e, ts);
       rows.push({ ts, kind: 'done', key, step: st, status: e.status, rateProvider: lim });
     } else if (['step_rate_limited', 'workflow_abort', 'workflow_error', 'step_error'].includes(t)) {
       if (ts) rows.push({ ts, kind: 'alert', step: st, type: t, reason: e.reason ?? '', error: String(e.error ?? '') });
@@ -321,6 +326,7 @@ function timeline(runDir, routing) {
   // 共有するので、絞らないと中断の行にリトライの判定が付く
   for (const r of rows) {
     if (r.status === 'done' && (r.kind === 'done' || (r.kind === 'phase' && r.phase === 'judge'))) r.judge = judges[r.key] ?? null;
+    if (r.status && r.status !== 'done' && (r.kind === 'done' || r.kind === 'phase') && errors[r.key]) r.errors = errors[r.key];
   }
   // レポートを所属 step に紐づけ（mtime が step の時間帯 ±5秒に入るもの。複数候補なら最も遅く始まった step）
   const unmatched = [];
@@ -350,7 +356,7 @@ function timeline(runDir, routing) {
     const row = best && rows.find((x) => x.key === best && (x.kind === 'step' || x.kind === 'sub'));
     if (row) row.reports.push(r.rel); else unmatched.push(r);
   }
-  return { rows, lastOutput, unmatched, judges, lastJudgeKey };
+  return { rows, lastOutput, unmatched, judges, lastJudgeKey, errors };
 }
 
 // ---------- レポート ----------
@@ -515,7 +521,7 @@ function state(sel, showAll = false) {
     // 同じステップの前の iteration の判定を付けないよう、その step の最後の開始行の key に限る
     const lastStart = [...tl.rows].reverse().find((r) => (r.kind === 'step' || r.kind === 'sub') && r.step === step);
     const key = lastStart && tl.judges[lastStart.key] ? lastStart.key : null;
-    tl.rows.push({ ts: m.endTime ?? m.updatedAt, kind: 'end', status: m.status, step, key: key ?? '', reason: m.reason ?? m.failure?.error ?? '', judge: key ? tl.judges[key] : null });
+    tl.rows.push({ ts: m.endTime ?? m.updatedAt, kind: 'end', status: m.status, step, key: key ?? '', reason: m.reason ?? m.failure?.error ?? '', judge: key ? tl.judges[key] : null, errors: lastStart ? (tl.errors[lastStart.key] ?? null) : null });
   }
   const tasks = tasksYamlFor(active.root);
   const runs = runList(active, limit);
@@ -650,6 +656,7 @@ const escA = (s) => esc(s).replace(/"/g,'&quot;');
 document.addEventListener('click', (e) => {
   const t = e.target.closest && e.target.closest('a.rep[data-rel]'); if (t) openReport(t.dataset.rel);
   const j = e.target.closest && e.target.closest('a.judge[data-ji]'); if (j) openJudge(TL[Number(j.dataset.ji)]);
+  const er = e.target.closest && e.target.closest('a.judge[data-ei]'); if (er) openError(TL[Number(er.dataset.ei)]);
 });
 let TL = []; // 描画中のタイムライン行（判定の詳細をクリックで開くために保持）
 let LATEST = -1; // TL の中で一番新しい行の index
@@ -664,6 +671,7 @@ function pm(r){
 function repLinks(r){ return (r.reports||[]).map(rel => '<a class="rep" data-rel="'+escA(rel)+'">'+esc(rel.split('/').pop())+'</a>').join(' '); }
 // 判定結果のラベル（rule 名そのまま）。クリックで judge の reason を開く。ラベルが無く stage だけある場合は「判定」
 function judgeLink(r, i){
+  if ((!r.judge || (!r.judge.label && !r.judge.stages.length)) && r.errors && r.errors.length) return '<a class="judge j-rejected" data-ei="'+i+'" title="クリックでエラーの内容を表示">エラー</a>';
   if (!r.judge || (!r.judge.label && !r.judge.stages.length)) return '';
   const label = r.judge.label || '判定ログ';
   const cls = /^approve/i.test(label) ? 'j-approved' : /^reject/i.test(label) ? 'j-rejected' : '';
@@ -757,11 +765,19 @@ function drawEdges(){
 }
 window.addEventListener('resize', drawEdges);
 document.addEventListener('click', (e) => { const n = e.target.closest && e.target.closest('.node.has-j'); if (n) openJudge(TL[Number(n.dataset.ji)]); });
+function openError(r){
+  const lines = [];
+  for (const e of r.errors) { lines.push(jst(e.ts) + '  ' + e.phase + ' → ' + e.status); lines.push(e.text); lines.push(''); }
+  document.getElementById('vtitle').textContent = r.step + ' のエラー';
+  const body = document.getElementById('vbody'); body.textContent = lines.join('\n'); body.scrollTop = 0; body.style.fontSize = '13px';
+  document.getElementById('viewer').style.display = 'flex';
+}
 function rowHtml(r, i){
   if (r.kind==='step') return '<tr'+(i===LATEST?' class="latest"':'')+'><td class="ts">'+jst(r.ts)+'</td><td class="step">▶ '+esc(r.step)+(r.workflow&&r.workflow!=='default'?' <span class="muted">['+esc(r.workflow)+']</span>':'')+' <span class="muted">· '+r.iteration+'/'+(MAX ?? '?')+'</span></td><td class="pm">'+pm(r)+'</td><td class="reps" colspan="2">'+repLinks(r)+'</td></tr>';
   if (r.kind==='sub')  return '<tr'+(i===LATEST?' class="latest"':'')+'><td class="ts">'+jst(r.ts)+'</td><td class="sub">├▶ '+esc(r.step)+'</td><td class="pm">'+pm(r)+'</td><td class="reps" colspan="2">'+repLinks(r)+'</td></tr>';
   if (r.kind==='phase') {
-    const tail = '<td>'+esc(r.phase)+' → '+esc(r.status)+'</td><td colspan="2">'+(r.error?'<span class="err">'+esc(r.error.slice(0,300))+'</span>':judgeLink(r, i))+'</td></tr>';
+    // エラーは本文を長々と出さず、「エラー」リンク + 先頭 80 文字。全文はクリックでモーダル
+    const tail = '<td>'+esc(r.phase)+' → '+esc(r.status)+'</td><td colspan="2">'+(r.error?judgeLink(r, i)+' <span class="err">'+esc(r.error.slice(0,80))+(r.error.length>80?'…':'')+'</span>':judgeLink(r, i))+'</td></tr>';
     // 木の中の行: 左端の時刻列は空け、枝（├ / └）の後ろに終了時刻を置く（左端に時刻があるのは開始・完了の行だけ）
     if (r.tree && r.status!=='rate_limited') return '<tr class="phase'+(i===LATEST?' latest':'')+'"><td class="ts"></td><td class="sub">&nbsp;&nbsp;&nbsp;&nbsp;'+r.tree+'<span class="ts">'+jst(r.ts)+'</span></td>'+tail;
     return '<tr class="'+(r.status==='rate_limited'?'warn':'phase')+(i===LATEST?' latest':'')+'"><td class="ts">'+jst(r.ts)+'</td><td class="sub">'+(r.status==='rate_limited'?'⚠':'│')+' '+esc(r.step)+'</td>'+tail;
