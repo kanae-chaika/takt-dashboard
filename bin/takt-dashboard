@@ -608,8 +608,8 @@ const HTML = `<!DOCTYPE html>
   .rz::after { content:''; position:absolute; left:50%; top:5px; width:36px; height:3px; margin-left:-18px; border-radius:2px; background:var(--line); }
   .rz:hover::after { background:var(--dim); }
   .pathsec { position:relative; }
-  .pathsec h2 { position:absolute; top:8px; left:14px; margin:0; } /* 見出しを浮かせて縦の場所を取らない */
-  .path { position:relative; overflow:auto; padding:18px 8px 2px; } /* 上は absolute の見出しぶん空ける */
+  .pathsec h2 { margin-bottom:4px; } /* 図との間は詰める */
+  .path { position:relative; overflow:auto; padding:4px 8px 2px; }
   .lane { position:relative; display:flex; align-items:center; gap:48px; width:max-content; }
   .node { position:relative; background:#0d110f; border:1px solid var(--line); border-radius:8px; padding:6px 12px; min-width:140px; cursor:default; line-height:1.45; }
   .node.has-j { cursor:pointer; }
