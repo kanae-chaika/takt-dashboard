@@ -664,7 +664,7 @@ const HTML = `<!DOCTYPE html>
 <body>
 <header><h1><a href="/" title="最新の run に戻る"><img src="/takt-logo.svg" alt="TAKT" class="logo" onerror="this.replaceWith('TAKT')"> ダッシュボード</a></h1><select id="runsel" aria-label="表示する run" onchange="selectRun(this.value)"></select><span class="muted" id="upd" style="margin-left:auto"></span></header>
 <main id="app"></main>
-<dialog id="viewer" aria-labelledby="vtitle"><div class="box"><div class="head"><span id="vtitle"></span><button type="button" onclick="closeViewer()" title="閉じる" aria-label="閉じる">×</button></div><pre id="vbody"></pre></div></dialog>
+<dialog id="viewer" aria-labelledby="vtitle"><div class="box"><div class="head"><span id="vtitle"></span><button type="button" onclick="closeViewer()" title="閉じる" aria-label="閉じる">×</button></div><pre id="vbody" tabindex="0" role="region" aria-labelledby="vtitle"></pre></div></dialog>
 <script>
 const esc = (s) => String(s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const escA = (s) => esc(s).replace(/"/g,'&quot;');
@@ -822,16 +822,23 @@ async function openReport(rel){
 }
 // #app の中でフォーカスできる要素（開く要素）の種類と、それを見分ける data 属性
 const FOCUS_KINDS = [['button.rep', 'data-rel'], ['button.judge', 'data-ji'], ['button.judge', 'data-ei'], ['.node.has-j', 'data-ji']];
-// 2 秒ごとの再描画で #app が作り直されると元の要素は DOM から外れるので、セレクタと「同じセレクタの何番目か」を覚えて探し直す
-// （同じ data-ji の判定がタスク欄・タイムライン・経路に出るので、種類と番目で見分ける）。開く要素でなければ null
+// data-ji / data-ei は TL の添字。再描画で前に行が入る（並列の子のフェーズ行は子の直後にまとめる等）と添字がずれるので、行そのものを表す値で見分ける
+function focusKey(el, attr){
+  const v = el.getAttribute(attr); if (attr === 'data-rel') return v;
+  const r = TL[Number(v)]; return r ? [r.kind, r.key ?? r.step, r.phase ?? '', r.ts ?? ''].join('|') : null;
+}
+// 2 秒ごとの再描画で #app が作り直されると元の要素は DOM から外れるので、種類・行・「同じ種類と行の何番目か」を覚えて探し直す
+// （同じ判定がタスク欄・タイムライン・経路に出るので、種類と番目で見分ける）。TL を描き直す前に呼ぶこと。開く要素でなければ null
 function locate(el){
   for (const [sel, attr] of FOCUS_KINDS) {
-    if (!el.matches(sel + '[' + attr + ']')) continue;
-    const full = sel + '[' + attr + '="' + CSS.escape(el.getAttribute(attr)) + '"]';
-    return { el, full, index: [...document.querySelectorAll(full)].indexOf(el) };
+    const full = sel + '[' + attr + ']';
+    if (!el.matches(full)) continue;
+    const key = focusKey(el, attr);
+    return { el, full, attr, key, index: [...document.querySelectorAll(full)].filter((x) => focusKey(x, attr) === key).indexOf(el) };
   }
   return null;
 }
+function relocate(o){ return [...document.querySelectorAll(o.full)].filter((x) => focusKey(x, o.attr) === o.key)[o.index]; }
 // モーダルを開いた要素。閉じたらそこへフォーカスを戻す。
 // openReport は fetch を待ってから開くので、待つ間に再描画が走っても困らないよう、クリック・キーの時点で記録する
 let viewerOpener = null;
@@ -842,7 +849,7 @@ function closeViewer(){ const v = document.getElementById('viewer'); if (v.open)
 // Esc（dialog 標準）・×・背景のどれで閉じてもここを通る
 document.getElementById('viewer').addEventListener('close', () => {
   const o = viewerOpener; viewerOpener = null; if (!o) return;
-  const el = o.el.isConnected ? o.el : document.querySelectorAll(o.full)[o.index];
+  const el = o.el.isConnected ? o.el : relocate(o);
   if (el) el.focus();
 });
 // 背景（モーダルの外側）クリックで閉じる。box 内で文字選択して外で離した場合は閉じない（mousedown も背景のときだけ）
@@ -958,7 +965,7 @@ async function tick(){
     </section>\`}\`;
   restoreScroll(keep, winY);
   drawEdges();
-  if (focusInApp) { const el = document.querySelectorAll(focusInApp.full)[focusInApp.index]; if (el) el.focus({ preventScroll: true }); } // スクロール位置は restoreScroll で戻したので動かさない
+  if (focusInApp) { const el = relocate(focusInApp); if (el) el.focus({ preventScroll: true }); } // スクロール位置は restoreScroll で戻したので動かさない
 }
 function restoreScroll(keep, winY){
   for (const el of document.querySelectorAll('.scroll')) {

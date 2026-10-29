@@ -321,6 +321,14 @@ test('モーダルはタイトル（#vtitle）を名前として読ませ、× �
   assert.equal(page.viewer.querySelector('button[onclick="closeViewer()"]').getAttribute('aria-label'), '閉じる');
 });
 
+test('モーダルの本文（#vbody）は Tab でフォーカスでき（キーボードでスクロールするため）、タイトルを名前に持つ領域になっている', () => {
+  const page = loadPage();
+  const body = page.document.getElementById('vbody');
+  assert.equal(body.getAttribute('tabindex'), '0');
+  assert.equal(body.getAttribute('role'), 'region');
+  assert.equal(body.getAttribute('aria-labelledby'), 'vtitle');
+});
+
 // ---------- 指摘 11: キーボードで開ける要素 ----------
 
 test('レポート・判定・エラーを開く要素は、タスク欄・タイムライン・未分類のレポートのすべてで <button type="button"> になっている', async () => {
@@ -537,6 +545,35 @@ test('#app の中の要素にフォーカスがあるときに再描画が走っ
       const expected = c.pick(d);
       assert.ok(expected && expected.isConnected);
       assertSameElement(d.activeElement, expected, '再描画後のフォーカス');
+    });
+  }
+});
+
+test('再描画で前に行が増えて data-ji の添字がずれても、フォーカスは同じ判定・エラーに戻る', async (t) => {
+  // plan より前の時刻の step を足すと、タイムラインの行の添字（data-ji / data-ei）がすべて 1 つずれる
+  const PREP = { type: 'step_start', step: 'prep', iteration: 1, workflow: 'default', provider: 'claude', timestamp: '2026-10-29T01:00:00.500Z' };
+  const writeLog = (events) => fs.writeFileSync(path.join(RUN, 'logs', 'a.jsonl'), events.map((e) => JSON.stringify(e)).join('\n') + '\n');
+  t.after(() => writeLog(EVENTS));
+  const cases = [
+    { name: 'タイムラインの判定にフォーカス', pick: (d) => d.querySelector('#tl .judge[data-ji]'), open: false },
+    { name: 'エラーにフォーカス', pick: (d) => d.querySelector('#tl .judge[data-ei]'), open: false },
+    { name: 'タイムラインの判定で開き、閉じる', pick: (d) => d.querySelector('#tl .judge[data-ji]'), open: true },
+  ];
+  let n = 40;
+  for (const c of cases) {
+    await t.test(c.name, async () => {
+      writeLog(EVENTS);
+      const page = await renderedPage();
+      const d = page.document;
+      const el = c.pick(d);
+      const before = el.getAttribute('data-ji') ?? el.getAttribute('data-ei');
+      if (c.open) { press(page, el, 'Enter'); await waitFor(() => page.viewer.open, 'モーダルが開く'); } else el.focus();
+      writeLog([PREP, ...EVENTS]);
+      await rerender(page, n++);
+      const expected = c.pick(d);
+      assert.notEqual(expected.getAttribute('data-ji') ?? expected.getAttribute('data-ei'), before, '添字がずれている（前提）');
+      if (c.open) { pressEscape(page); await settle(); await settle(); }
+      assertSameElement(d.activeElement, expected, '戻った先');
     });
   }
 });
