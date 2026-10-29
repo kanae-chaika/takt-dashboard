@@ -609,10 +609,11 @@ const HTML = `<!DOCTYPE html>
   a.judge:hover { border-color:var(--acc); }
   a.judge.j-approved { color:var(--ok); }
   a.judge.j-rejected { color:var(--err); }
-  #viewer { position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:center; justify-content:center; padding:40px; }
-  #viewer .box { background:var(--panel); border:1px solid var(--line); border-radius:8px; width:min(1000px,100%); max-height:100%; display:flex; flex-direction:column; }
+  /* モーダル: 背景を濃く落とし、箱は一段明るい面 + 強めの枠 + 影で、中と外の区別をはっきりさせる */
+  #viewer { position:fixed; inset:0; background:rgba(233,245,238,.16); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); display:none; align-items:center; justify-content:center; padding:40px; }
+  #viewer .box { background:#161d18; border:1px solid rgba(233,245,238,.22); border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,.6); width:min(1000px,100%); max-height:100%; display:flex; flex-direction:column; }
   #viewer .head { display:flex; justify-content:space-between; padding:10px 16px; border-bottom:1px solid var(--line); }
-  #viewer pre { max-height:none; border:none; border-radius:0 0 8px 8px; flex:1; }
+  #viewer pre { max-height:none; border:none; border-radius:0 0 10px 10px; flex:1; background:#161d18; }
   .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:10px; }
   .bar div { height:100%; background:var(--run); transition:width .4s; }
   select { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:2px 8px; font-size:12px; }
