@@ -7,7 +7,7 @@
 // データ元は run ディレクトリの logs/*.jsonl・meta.json・reports/。provider/model が無い並列サブステップは
 // ~/.takt/runtime.yaml（無ければ config.yaml）から引く。
 import { createServer } from 'node:http';
-import { readFileSync, readdirSync, existsSync, statSync, realpathSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync, realpathSync, mkdirSync, writeFileSync, writeSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -550,7 +550,7 @@ function reportText(rel, sel) {
   if (!active) return null;
   const base = path.join(active.runDir, 'reports');
   const p = path.resolve(base, rel);
-  if (!p.startsWith(base + path.sep) || !existsSync(p)) return null;
+  if (!p.startsWith(base + path.sep) || !existsSync(p) || !statSync(p).isFile()) return null;
   return readFileSync(p, 'utf8');
 }
 
@@ -930,29 +930,49 @@ function restoreScroll(keep, winY){
 tick(); setInterval(tick, 2000);
 </script></body></html>`;
 
+// <run_dir> 固定のときは listen 前に meta.json を読めるか確かめる（読めないまま起動すると最初の /api/state で落ちるため）
+if (FIXED_RUN) {
+  try { readRunDir(FIXED_RUN); }
+  catch (e) {
+    // stderr がパイプだと console.error は非同期で、直後の process.exit で消えることがあるので同期で書く
+    writeSync(2, 'takt-dashboard: ' + path.join(path.resolve(FIXED_RUN), 'meta.json') + ' を読めません: ' + e.message + '\n');
+    process.exit(1);
+  }
+}
+
 createServer((req, res) => {
-  const url = new URL(req.url, 'http://localhost');
-  if (url.pathname === '/api/state') {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(state(url.searchParams.get('run') || null, url.searchParams.get('all') === '1')));
-    return;
+  try {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname === '/api/state') {
+      // 例外時に 500 を返せるよう、本文を作ってからヘッダーを書く
+      const body = JSON.stringify(state(url.searchParams.get('run') || null, url.searchParams.get('all') === '1'));
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(body);
+      return;
+    }
+    if (url.pathname === '/takt-logo.svg') {
+      // ロゴは takt 本体に同梱の docs/assets/takt-logo-dark.svg（公式 Web UI が /takt-logo.svg として配信しているもの）を読む。
+      // ~/.config/takt-dashboard/takt-logo.svg があればそちらを優先。どちらも無ければ 404 にして文字の見出しにフォールバック
+      const pkg = taktPackageDir();
+      const logo = [path.join(CFG_DIR, 'takt-logo.svg'), ...(pkg ? [path.join(pkg, 'docs', 'assets', 'takt-logo-dark.svg')] : [])].find((p) => existsSync(p));
+      if (!logo) { res.writeHead(404); res.end(); return; }
+      res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'max-age=86400' });
+      res.end(readFileSync(logo));
+      return;
+    }
+    if (url.pathname === '/api/report') {
+      const t = reportText(url.searchParams.get('p') ?? '', url.searchParams.get('run') || null);
+      res.writeHead(t === null ? 404 : 200, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end(t ?? 'not found');
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); // 再起動後に古いページが使われないように
+    res.end(HTML);
+  } catch (e) {
+    // ハンドラ内の例外でプロセスを落とさない。ヘッダー送出後なら接続を切る
+    console.error('takt-dashboard: ' + req.url + ' の処理に失敗: ' + (e?.stack ?? e));
+    if (res.headersSent) { res.destroy(); return; }
+    res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+    res.end('internal error');
   }
-  if (url.pathname === '/takt-logo.svg') {
-    // ロゴは takt 本体に同梱の docs/assets/takt-logo-dark.svg（公式 Web UI が /takt-logo.svg として配信しているもの）を読む。
-    // ~/.config/takt-dashboard/takt-logo.svg があればそちらを優先。どちらも無ければ 404 にして文字の見出しにフォールバック
-    const pkg = taktPackageDir();
-    const logo = [path.join(CFG_DIR, 'takt-logo.svg'), ...(pkg ? [path.join(pkg, 'docs', 'assets', 'takt-logo-dark.svg')] : [])].find((p) => existsSync(p));
-    if (!logo) { res.writeHead(404); res.end(); return; }
-    res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'max-age=86400' });
-    res.end(readFileSync(logo));
-    return;
-  }
-  if (url.pathname === '/api/report') {
-    const t = reportText(url.searchParams.get('p') ?? '', url.searchParams.get('run') || null);
-    res.writeHead(t === null ? 404 : 200, { 'content-type': 'text/plain; charset=utf-8' });
-    res.end(t ?? 'not found');
-    return;
-  }
-  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); // 再起動後に古いページが使われないように
-  res.end(HTML);
 }).listen(PORT, '127.0.0.1', () => console.log('takt-dashboard: http://localhost:' + PORT)); // ローカル専用。他のマシンからは繋がらない
