@@ -59,8 +59,8 @@ port: 7331
 これを避けるため、`~/.takt/runtime.yaml` や `config.yaml` を変更するときは、変更前のファイルを次の名前で残しておくと、ダッシュボードが「run 開始時点で有効だった設定」を自動で選びます。
 
 ```
-~/.takt/runtime.yaml.bak-20261025-copilot-quota   # 変更前の内容。ファイルの更新時刻 = 置き換えた時刻
-~/.takt/config.yaml.bak.20261020-runtime-v1
+~/.takt/runtime.yaml.bak-20260101-change-review-model   # 変更前の内容。ファイルの更新時刻 = 置き換えた時刻
+~/.takt/config.yaml.bak.20260101-change-model
 ```
 
 - `runtime.yaml.bak` / `config.yaml.bak` で始まる名前なら、後ろは自由
