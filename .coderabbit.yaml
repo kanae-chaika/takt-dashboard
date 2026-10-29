@@ -4,3 +4,4 @@ reviews:
   profile: assertive # takt 本体と同じ。細かい指摘も出す
   auto_review:
     drafts: true # takt は PR を draft で作るため
+    base_branches: [".*"] # 向き先が main 以外の PR（takt のブランチの上に積んだ PR など）もレビューする
