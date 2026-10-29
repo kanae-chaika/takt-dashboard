@@ -872,6 +872,8 @@ async function tick(){
   TL = tl;
   // 一番新しい行に印を付ける（木にすると最新の行が表の途中に出るため）
   LATEST = tl.reduce((best, r, i) => (best < 0 || r.ts > tl[best].ts) ? i : best, -1);
+  // completed の run は、最後の判定（maintenance なら final-gate の APPROVE など）をバッジの横に出す。判定が無ければ出さない
+  const finalIdx = m.status==='completed' ? tl.reduce((best, r, i) => (r.judge && r.judge.label && (best < 0 || r.ts >= tl[best].ts)) ? i : best, -1) : -1;
   const pct = MAX ? Math.min(100, Math.round((m.currentIteration ?? 0) / MAX * 100)) : 0;
   document.getElementById('app').innerHTML = \`
     <section class="c2 toprow" style="height:\${TL_H}px">
@@ -880,7 +882,7 @@ async function tick(){
       <div class="row"><span class="k">リポジトリ</span><span>\${esc(st.repo)}</span></div>
       \${st.currentTask && st.currentTask.issue ? '<div class="row"><span class="k">Issue</span><span>#'+esc(String(st.currentTask.issue))+'</span></div>' : ''}
       \${st.currentTask && st.currentTask.branch ? '<div class="row"><span class="k">ブランチ</span><span>'+esc(st.currentTask.branch)+'</span></div>' : ''}
-      <div style="margin:8px 0"><span class="badge b-\${esc(m.status)}">\${esc(statusLabel(m.status))}</span></div>
+      <div style="margin:8px 0"><span class="badge b-\${esc(m.status)}">\${esc(statusLabel(m.status))}</span>\${finalIdx >= 0 ? ' '+judgeLink(tl[finalIdx], finalIdx) : ''}</div>
       <div class="row"><span class="k">ワークフロー</span><span>\${esc(m.workflow)}</span></div>
       <div class="row"><span class="k">イテレーション</span><span>\${m.currentIteration} / \${MAX ?? '?'}</span></div>
       <div class="bar"><div style="width:\${pct}%"></div></div>
