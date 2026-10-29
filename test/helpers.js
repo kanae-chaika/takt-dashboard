@@ -19,7 +19,10 @@ export function spawnDashboard({ cwd, home, args = [], env = {} }) {
     proc.once('close', (code, signal) => resolve({ code, signal }));
     proc.once('error', (err) => resolve({ code: null, signal: null, error: err.message }));
   });
-  // 起動に失敗するとパイプが作られず stdout / stderr が無いことがあるので、ある場合だけ読む
+  // 起動に失敗するとパイプが作られず stdout / stderr が無いことがあるので、ある場合だけ読む。
+  // 日本語のメッセージ（起動失敗時の stderr など）がチャンクの境目で文字化けしないよう、UTF-8 としてデコードしてから連結する
+  proc.stdout?.setEncoding('utf8');
+  proc.stderr?.setEncoding('utf8');
   const out = { stdout: '', stderr: '' };
   proc.stdout?.on('data', (d) => { out.stdout += d; });
   proc.stderr?.on('data', (d) => { out.stderr += d; });
