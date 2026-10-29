@@ -69,16 +69,27 @@ function runRecord(dir, taskCache) {
   if (meta.status === 'running' && isRunInterrupted(root, meta, taskCache)) meta.status = 'interrupted';
   return { meta, root, runDir };
 }
+// リポジトリの候補: カレントディレクトリと、EXTRA_ROOTS とその直下のディレクトリ。run の探索（findRuns）と tasks.yaml の逆引き（tasksYamlFor）で使う。
+// ~/.takt は findRuns だけが足す（逆引きの候補には入れない）。揃えると run 一覧や逆引きの結果（repo 名・キュー・中断判定）が変わりうるので、この違いはそのまま残している
+function repoCandidates() {
+  return [process.cwd(), ...EXTRA_ROOTS.flatMap((r) => [r, ...listDirs(r)])];
+}
+// リポジトリの .takt/clone-meta/*.json に書かれた clonePath（takt が作った worktree の場所）の一覧。読めないファイルは飛ばす
+function cloneMetaPaths(repo) {
+  const metaDir = path.join(repo, '.takt', 'clone-meta');
+  const paths = [];
+  for (const f of (existsSync(metaDir) ? readdirSync(metaDir) : [])) {
+    try { const cp = JSON.parse(readFileSync(path.join(metaDir, f), 'utf8')).clonePath; if (cp) paths.push(cp); } catch {}
+  }
+  return paths;
+}
 function findRuns(taskCache) {
-  const roots = new Set([process.cwd(), path.join(HOME, '.takt')]);
-  for (const r of EXTRA_ROOTS) { roots.add(r); for (const d of listDirs(r)) roots.add(d); }
+  // 探索の順番は cwd → ~/.takt → EXTRA_ROOTS（とその直下）。~/.takt を含むのは findRuns だけ（repoCandidates のコメントを参照）
+  const roots = new Set([process.cwd(), path.join(HOME, '.takt'), ...repoCandidates()]);
   // リポジトリから takt が作った worktree を辿る: .takt/clone-meta/*.json の clonePath と tasks.yaml の worktree_path。
   // takt の既定では worktree はリポジトリの隣（../<clone-name>）に作られるので、リポジトリで起動すれば --roots 無しで見つかる
   for (const repo of [...roots]) {
-    const metaDir = path.join(repo, '.takt', 'clone-meta');
-    for (const f of (existsSync(metaDir) ? readdirSync(metaDir) : [])) {
-      try { const cp = JSON.parse(readFileSync(path.join(metaDir, f), 'utf8')).clonePath; if (cp && existsSync(cp)) roots.add(cp); } catch {}
-    }
+    for (const cp of cloneMetaPaths(repo)) if (existsSync(cp)) roots.add(cp);
     const ty = path.join(repo, '.takt', 'tasks.yaml');
     if (existsSync(ty)) for (const m of readFileSync(ty, 'utf8').matchAll(/^\s+worktree_path:\s*(\S+)/gm)) if (existsSync(m[1])) roots.add(m[1]);
   }
@@ -103,12 +114,16 @@ function isPidAlive(pid) {
   if (!pid) return false;
   try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
 }
+// parseTasks が返したタスク（tasks.yaml の生の値）の status。running で owner_pid が死んでいれば 'interrupted'
+function taskStatus(t) {
+  return t.status === 'running' && !isPidAlive(Number(t.owner_pid)) ? 'interrupted' : t.status;
+}
 // run の meta.json が running のとき、対応するタスク（worktree_path が一致）が実行中でなければ中断扱い。
 // タスクが見つからない run（worktree 外の直接実行など）は判定できないので running のままにする。
 function isRunInterrupted(root, meta, cache) {
   const t = taskForRoot(root, cache);
   if (!t) return false;
-  if (t.status !== 'running') return true;
+  if (taskStatus(t) !== 'running') return true;
   return Boolean(t.run_slug) && t.run_slug !== meta.runSlug; // 同じ worktree で再実行中の場合、古い run は中断
 }
 
@@ -215,7 +230,7 @@ function readEvents(runDir) {
   }
   return events;
 }
-function timeline(runDir, routing) {
+function timeline(runDir, routing, meta) {
   const events = readEvents(runDir);
   const started = new Set();
   const rows = [];
@@ -355,6 +370,30 @@ function timeline(runDir, routing) {
     if (!row) { const stem = path.basename(r.rel, '.md'); row = [...rows].reverse().find((x) => (x.kind === 'step' || x.kind === 'sub') && x.step === stem); }
     if (row) row.reports.push(r.rel); else unmatched.push(r);
   }
+  // 中断・失敗した run は、終わった時刻を最後の行にする。失敗は meta.endTime と meta.reason / meta.failure（例: rule_no_match）、
+  // 中断（プロセスが落ちて status が running のまま）は meta.updatedAt（最後に書かれた時刻）を使う
+  if (meta.status === 'interrupted') {
+    // meta.currentStep は親ワークフローから見たステップ名（maintenance なら常に develop）で、どこで止まったか分からない。
+    // タイムラインで「開始したが終わっていない」行（通常ステップは done 行が無いもの、並列の子は judge が終わっていないもの）を拾って並べる
+    const judged = new Set(rows.filter((r) => r.kind === 'phase' && r.phase === 'judge').map((r) => r.key));
+    // リトライは同じ key で開始行が 2 つあるので、「その開始行より後に同じ key の done 行が無い」ことで実行中と判定する
+    const steps = rows.filter((r, i) => r.kind === 'step' && !rows.slice(i + 1).some((x) => x.kind === 'done' && x.key === r.key)).map((r) => r.step);
+    const subs = rows.filter((r) => r.kind === 'sub' && !judged.has(r.key)).map((r) => r.step);
+    const uniq = (a) => a.filter((v, i) => a.indexOf(v) === i);
+    const label = steps.length ? uniq(steps).join('・') + (subs.length ? '（並列の子 ' + uniq(subs).length + ' 件）' : '') : uniq(subs).join('・');
+    rows.push({ ts: meta.updatedAt, kind: 'end', status: 'interrupted', step: label ? label + ' の実行中' : (meta.currentStep ?? '') });
+  }
+  else if (meta.status === 'failed' || meta.status === 'aborted') {
+    const step = meta.failure?.step ?? meta.currentStep ?? '';
+    // 失敗したステップの「最後の試行」の判定（rule_no_match なら 3 段階のエラー内容）を付けて、クリックで原因を見られるようにする。
+    // 同じステップの前の iteration の判定を付けないよう、その step の最後の開始行の key に限る
+    const lastStart = [...rows].reverse().find((r) => (r.kind === 'step' || r.kind === 'sub') && r.step === step);
+    const key = lastStart && judges[lastStart.key] ? lastStart.key : null;
+    // エラーのリンクは「起きた行」（■ step → error や子の error 行）にだけ出す。失敗行は理由の文字と、判定があれば判定ログだけ
+    // 理由が『Step "<step>" failed: …』の形なら、ステップ名は行頭に出しているので重複する前置きを落とす
+    const reason = String(meta.reason ?? meta.failure?.error ?? '').replace(new RegExp('^Step "' + step.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '" failed:\\s*'), '');
+    rows.push({ ts: meta.endTime ?? meta.updatedAt, kind: 'end', status: meta.status, step, key: key ?? '', reason, judge: key ? judges[key] : null });
+  }
   return { rows, lastOutput, unmatched, judges, lastJudgeKey, errors };
 }
 
@@ -403,17 +442,10 @@ function maxStepsFor(workflow, root) {
 function tasksYamlFor(root) {
   const direct = path.join(root, '.takt', 'tasks.yaml');
   if (existsSync(direct)) return { path: direct, text: readFileSync(direct, 'utf8') };
-  for (const repo of [process.cwd(), ...EXTRA_ROOTS.flatMap((r) => [r, ...listDirs(r)])]) {
-    const metaDir = path.join(repo, '.takt', 'clone-meta');
-    for (const f of (existsSync(metaDir) ? readdirSync(metaDir) : [])) {
-      try {
-        const m = JSON.parse(readFileSync(path.join(metaDir, f), 'utf8'));
-        if (m.clonePath === root) {
-          const p = path.join(repo, '.takt', 'tasks.yaml');
-          if (existsSync(p)) return { path: p, text: readFileSync(p, 'utf8') };
-        }
-      } catch {}
-    }
+  for (const repo of repoCandidates()) {
+    if (!cloneMetaPaths(repo).includes(root)) continue;
+    const p = path.join(repo, '.takt', 'tasks.yaml');
+    if (existsSync(p)) try { return { path: p, text: readFileSync(p, 'utf8') }; } catch {}
   }
   return { path: null, text: '' };
 }
@@ -451,15 +483,12 @@ function parseTasks(text) {
     }
     return v;
   };
-  const statusOf = (b) => {
-    const s = field(b, 'status');
-    return s === 'running' && !isPidAlive(Number(field(b, 'owner_pid'))) ? 'interrupted' : s;
-  };
+  // status は tasks.yaml の値のまま返す（中断の読み替えは taskStatus でする）。owner_pid は taskStatus 用で、/api/state の currentTask には出さない
   return items.map((b) => ({
     raw: b, worktree_path: field(b, 'worktree_path'), branch: field(b, 'branch'), run_slug: field(b, 'run_slug'),
-    name: field(b, 'name'), status: statusOf(b), workflow: field(b, 'workflow'), issue: field(b, 'issue'),
+    name: field(b, 'name'), status: field(b, 'status'), workflow: field(b, 'workflow'), issue: field(b, 'issue'),
     summary: field(b, 'summary').replace(/^#+\s*/, '').split('\n')[0],
-    created_at: field(b, 'created_at'), completed_at: field(b, 'completed_at'),
+    created_at: field(b, 'created_at'), completed_at: field(b, 'completed_at'), owner_pid: field(b, 'owner_pid'),
   }));
 }
 
@@ -498,34 +527,12 @@ function state(sel, showAll = false) {
   const active = currentRun(sel, found, taskCache);
   if (!active) { const runs = runList(null, limit, found, taskCache); return { active: null, runs, runsTotal: runs.total, ...(sel ? { runNotFound: sel } : {}) }; }
   const routing = routingFor(active.runDir, active.meta.startTime);
-  const tl = timeline(active.runDir, routing);
-  // 中断・失敗した run は、終わった時刻を最後の行にする。失敗は meta.endTime と meta.reason / meta.failure（例: rule_no_match）、
-  // 中断（プロセスが落ちて status が running のまま）は meta.updatedAt（最後に書かれた時刻）を使う
-  const m = active.meta;
-  if (m.status === 'interrupted') {
-    // meta.currentStep は親ワークフローから見たステップ名（maintenance なら常に develop）で、どこで止まったか分からない。
-    // タイムラインで「開始したが終わっていない」行（通常ステップは done 行が無いもの、並列の子は judge が終わっていないもの）を拾って並べる
-    const judged = new Set(tl.rows.filter((r) => r.kind === 'phase' && r.phase === 'judge').map((r) => r.key));
-    // リトライは同じ key で開始行が 2 つあるので、「その開始行より後に同じ key の done 行が無い」ことで実行中と判定する
-    const steps = tl.rows.filter((r, i) => r.kind === 'step' && !tl.rows.slice(i + 1).some((x) => x.kind === 'done' && x.key === r.key)).map((r) => r.step);
-    const subs = tl.rows.filter((r) => r.kind === 'sub' && !judged.has(r.key)).map((r) => r.step);
-    const uniq = (a) => a.filter((v, i) => a.indexOf(v) === i);
-    const label = steps.length ? uniq(steps).join('・') + (subs.length ? '（並列の子 ' + uniq(subs).length + ' 件）' : '') : uniq(subs).join('・');
-    tl.rows.push({ ts: m.updatedAt, kind: 'end', status: 'interrupted', step: label ? label + ' の実行中' : (m.currentStep ?? '') });
-  }
-  else if (m.status === 'failed' || m.status === 'aborted') {
-    const step = m.failure?.step ?? m.currentStep ?? '';
-    // 失敗したステップの「最後の試行」の判定（rule_no_match なら 3 段階のエラー内容）を付けて、クリックで原因を見られるようにする。
-    // 同じステップの前の iteration の判定を付けないよう、その step の最後の開始行の key に限る
-    const lastStart = [...tl.rows].reverse().find((r) => (r.kind === 'step' || r.kind === 'sub') && r.step === step);
-    const key = lastStart && tl.judges[lastStart.key] ? lastStart.key : null;
-    // エラーのリンクは「起きた行」（■ step → error や子の error 行）にだけ出す。失敗行は理由の文字と、判定があれば判定ログだけ
-    // 理由が『Step "<step>" failed: …』の形なら、ステップ名は行頭に出しているので重複する前置きを落とす
-    const reason = String(m.reason ?? m.failure?.error ?? '').replace(new RegExp('^Step "' + step.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '" failed:\\s*'), '');
-    tl.rows.push({ ts: m.endTime ?? m.updatedAt, kind: 'end', status: m.status, step, key: key ?? '', reason, judge: key ? tl.judges[key] : null });
-  }
+  const tl = timeline(active.runDir, routing, active.meta);
   const tasks = tasksYamlFor(active.root);
   const runs = runList(active, limit, found, taskCache);
+  const task = taskForRoot(active.root, taskCache);
+  let currentTask = null;
+  if (task) { const { owner_pid, ...rest } = task; currentTask = { ...rest, status: taskStatus(task) }; } // owner_pid は応答に出さない
   return {
     runs, runsTotal: runs.total,
     active: { meta: active.meta, runDir: active.runDir, root: active.root, reports: tl.unmatched, maxSteps: maxStepsFor(active.meta.workflow, active.root) },
@@ -534,7 +541,7 @@ function state(sel, showAll = false) {
     tasksPath: tasks.path,
     // リポジトリ名: tasks.yaml の置き場（<repo>/.takt/tasks.yaml）から取る。取れなければ run のルートのディレクトリ名
     repo: path.basename(tasks.path ? path.resolve(tasks.path, '..', '..') : active.root),
-    currentTask: taskForRoot(active.root, taskCache), // worktree が一致するエントリだけ。無ければ「キューなし」
+    currentTask, // worktree が一致するエントリだけ。無ければ「キューなし」
   };
 }
 function reportText(rel, sel) {
