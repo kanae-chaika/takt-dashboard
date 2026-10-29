@@ -353,7 +353,9 @@ function timeline(runDir, routing) {
         }
       }
     }
-    const row = best && rows.find((x) => x.key === best && (x.kind === 'step' || x.kind === 'sub'));
+    let row = best && rows.find((x) => x.key === best && (x.kind === 'step' || x.kind === 'sub'));
+    // 3) 時刻で引けないとき（run フォルダをコピー・zip 展開して mtime が変わった場合）は、ファイル名の stem がステップ名と同じ最後の行に付ける
+    if (!row) { const stem = path.basename(r.rel, '.md'); row = [...rows].reverse().find((x) => (x.kind === 'step' || x.kind === 'sub') && x.step === stem); }
     if (row) row.reports.push(r.rel); else unmatched.push(r);
   }
   return { rows, lastOutput, unmatched, judges, lastJudgeKey, errors };
@@ -465,16 +467,19 @@ function parseTasks(text) {
 }
 
 // ---------- state ----------
+// run ディレクトリ（meta.json のある場所）を直接読む。一覧に無い run（zip で持ってきたもの等）を ?run= や <run_dir> で開くときに使う
+function readRunDir(dir) {
+  const runDir = path.resolve(dir);
+  const meta = JSON.parse(readFileSync(path.join(runDir, 'meta.json'), 'utf8'));
+  return { meta, runDir, root: path.resolve(runDir, '..', '..', '..') };
+}
 function currentRun(sel) {
   if (sel) {
     const hit = findRuns().find((r) => r.runDir === sel);
     if (hit) return hit;
+    try { return readRunDir(sel); } catch {} // 一覧に無くても meta.json があれば開く
   }
-  if (FIXED_RUN) {
-    const runDir = path.resolve(FIXED_RUN);
-    const meta = JSON.parse(readFileSync(path.join(runDir, 'meta.json'), 'utf8'));
-    return { meta, runDir, root: path.resolve(runDir, '..', '..', '..') };
-  }
+  if (FIXED_RUN) return readRunDir(FIXED_RUN);
   return findRuns()[0] ?? null;
 }
 function taskForRoot(root, cache) {

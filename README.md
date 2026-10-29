@@ -56,6 +56,18 @@ port: 7331
 | `routing/<run slug>.json` | run ごとの provider 割り当ての控え（自動生成） |
 | `takt-logo.svg` | ヘッダーのロゴを差し替えたいときだけ（任意）。通常は takt 本体に同梱のロゴ（`docs/assets/takt-logo-dark.svg`）を自動で使う |
 
+## 別のマシンで回した run を見る
+
+run ディレクトリ（`.takt/runs/<run>/`。`logs/` `meta.json` `reports/`）を zip などで持ってくれば、そのまま開けます。
+
+```bash
+takt-dashboard /path/to/<run>          # この run だけを表示
+# いつもの画面で開くなら  http://localhost:7331/?run=/path/to/<run>
+```
+
+- `meta.json` の中のパスは相対なので、置き場所は自由です
+- 並列の子ステップの provider / model は、回したマシンの `~/.config/takt-dashboard/routing/<run>.json` を一緒にもらって同じ場所に置くと正しく出ます。無ければ手元の設定から引いた値になります
+
 ## 過去の run の provider / model を正しく出すために
 
 並列の子ステップは takt のログに provider / model が記録されません。そのため設定ファイルから引きますが、設定を後から変えると過去の run の表示が変わってしまいます。
@@ -133,6 +145,8 @@ Started inside a repository, it follows the worktrees takt created (from `.takt/
 Both can also be set with environment variables (`TAKT_DASHBOARD_ROOTS`, `TAKT_DASHBOARD_PORT`) or in `~/.config/takt-dashboard/config.yaml` (`roots:` list and `port:`); command line > environment > config file > defaults. The dashboard keeps its own data there (`routing/` snapshots, optional `takt-logo.svg` override) and never writes into takt's `~/.takt/`. The header logo is read from the installed takt package (`docs/assets/takt-logo-dark.svg`).
 
 **Relation to the official Web UI**: takt's own Web UI (`takt ui`, `http://127.0.0.1:20525`) lists only the runs started from that UI. This dashboard lists all runs, including those started from the CLI (`takt run` / `takt watch`); UI-started runs are prefixed "UI:". The dashboard is read-only; task creation and branch/PR actions stay in the official UI. Both can run at the same time (different ports).
+
+**Viewing a run from another machine**: copy its run directory (`.takt/runs/<run>/` with `logs/`, `meta.json`, `reports/`) and open it with `takt-dashboard /path/to/<run>` or `?run=/path/to/<run>`. Paths inside `meta.json` are relative, so location does not matter. Bring that machine's `~/.config/takt-dashboard/routing/<run>.json` along to show the providers it actually used for parallel children.
 
 **Caveats**: the UI text is Japanese only for now (English is planned). TAKT's run log format is experimental and may change; verified against takt 0.73.0. Run data lives in each worktree's `.takt/runs/`, so deleting a task in `takt list` removes it from the dashboard too. Binds to localhost only, no authentication.
 
