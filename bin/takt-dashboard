@@ -591,7 +591,7 @@ const HTML = `<!DOCTYPE html>
   td.pm .src { color:var(--dim); font-size:11px; margin-left:4px; }
   td.st { color:var(--dim); }
   td.reps { white-space:normal; }
-  td.reps a.rep { display:inline-block; margin:0 6px 2px 0; padding:0 6px; border:1px solid var(--line); border-radius:4px; font-size:11.5px; }
+  td.reps button.rep { display:inline-block; margin:0 6px 2px 0; padding:0 6px; border:1px solid var(--line); border-radius:4px; font-size:11.5px; }
   tr.phase td { color:var(--dim); font-weight:normal; }
   tr.phase td.sub { padding-left:34px; }
   tr.phase td.sub .ts { color:var(--dim); font-variant-numeric:tabular-nums; margin-left:4px; }
@@ -606,15 +606,20 @@ const HTML = `<!DOCTYPE html>
   .stack { font-family:ui-monospace,Menlo,monospace; font-size:12px; color:var(--dim); margin-top:10px; }
   .stack b { color:var(--fg); }
   pre { margin:0; background:#0d110f; border:1px solid var(--line); border-radius:6px; padding:12px; overflow:auto; max-height:360px; font-size:12px; line-height:1.5; color:#c9d1d9; white-space:pre-wrap; }
-  a.rep { color:var(--acc); text-decoration:none; cursor:pointer; }
-  a.rep:hover { text-decoration:underline; }
+  /* レポート・判定・エラーはキーボードで開けるよう <button>。ボタンの既定の枠・背景・余白・フォントを消して、リンク・チップの見た目に合わせる */
+  button.rep { font:inherit; margin:0; padding:0; border:none; border-radius:0; background:none; text-align:left; color:var(--acc); text-decoration:none; cursor:pointer; }
+  button.rep:hover { text-decoration:underline; }
   /* rule 名が長いこともある（実装系は文章）。横幅を広げず … で切り、全文は hover と詳細モーダルで */
-  a.judge { display:inline-block; padding:0 6px; border:1px solid var(--line); border-radius:4px; font-size:11.5px; color:var(--fg); cursor:pointer; text-decoration:none; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
-  a.judge:hover { border-color:var(--acc); }
-  a.judge.j-approved { color:var(--ok); }
-  a.judge.j-rejected { color:var(--err); }
+  button.judge { font:inherit; margin:0; background:none; text-align:left; display:inline-block; padding:0 6px; border:1px solid var(--line); border-radius:4px; font-size:11.5px; color:var(--fg); cursor:pointer; text-decoration:none; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
+  button.judge:hover { border-color:var(--acc); }
+  button.judge.j-approved { color:var(--ok); }
+  button.judge.j-rejected { color:var(--err); }
   /* モーダル: 背景を濃く落とし、箱は一段明るい面 + 強めの枠 + 影で、中と外の区別をはっきりさせる */
   #viewer { position:fixed; inset:0; background:rgba(233,245,238,.16); backdrop-filter:blur(3px); -webkit-backdrop-filter:blur(3px); display:none; align-items:center; justify-content:center; padding:40px; }
+  /* <dialog> の既定（中央の小さな箱・枠・余白・白背景）を消し、今までどおり画面全体を覆う。背景のクリックは dialog 自身に当たる */
+  #viewer { width:auto; height:auto; max-width:none; max-height:none; margin:0; border:none; color:var(--fg); }
+  #viewer[open] { display:flex; }
+  #viewer::backdrop { background:transparent; }
   #viewer .box { background:#161d18; border:1px solid rgba(233,245,238,.22); border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,.6); width:min(1000px,100%); max-height:100%; display:flex; flex-direction:column; }
   #viewer .head { display:flex; justify-content:space-between; padding:10px 16px; border-bottom:1px solid var(--line); }
   #viewer pre { max-height:none; border:none; border-radius:0 0 10px 10px; flex:1; background:#161d18; }
@@ -657,16 +662,16 @@ const HTML = `<!DOCTYPE html>
   svg.edges path.e-done { stroke:rgba(115,205,162,.7); }
 </style></head>
 <body>
-<header><h1><a href="/" title="最新の run に戻る"><img src="/takt-logo.svg" alt="TAKT" class="logo" onerror="this.replaceWith('TAKT')"> ダッシュボード</a></h1><select id="runsel" onchange="selectRun(this.value)"></select><span class="muted" id="upd" style="margin-left:auto"></span></header>
+<header><h1><a href="/" title="最新の run に戻る"><img src="/takt-logo.svg" alt="TAKT" class="logo" onerror="this.replaceWith('TAKT')"> ダッシュボード</a></h1><select id="runsel" aria-label="表示する run" onchange="selectRun(this.value)"></select><span class="muted" id="upd" style="margin-left:auto"></span></header>
 <main id="app"></main>
-<div id="viewer"><div class="box"><div class="head"><span id="vtitle"></span><button onclick="closeViewer()" title="閉じる">×</button></div><pre id="vbody"></pre></div></div>
+<dialog id="viewer"><div class="box"><div class="head"><span id="vtitle"></span><button type="button" onclick="closeViewer()" title="閉じる">×</button></div><pre id="vbody"></pre></div></dialog>
 <script>
 const esc = (s) => String(s ?? '').replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const escA = (s) => esc(s).replace(/"/g,'&quot;');
 document.addEventListener('click', (e) => {
-  const t = e.target.closest && e.target.closest('a.rep[data-rel]'); if (t) openReport(t.dataset.rel);
-  const j = e.target.closest && e.target.closest('a.judge[data-ji]'); if (j) openJudge(TL[Number(j.dataset.ji)]);
-  const er = e.target.closest && e.target.closest('a.judge[data-ei]'); if (er) openError(TL[Number(er.dataset.ei)]);
+  const t = e.target.closest && e.target.closest('button.rep[data-rel]'); if (t) { noteOpener(t, 'button.rep', 'data-rel'); openReport(t.dataset.rel); }
+  const j = e.target.closest && e.target.closest('button.judge[data-ji]'); if (j) { noteOpener(j, 'button.judge', 'data-ji'); openJudge(TL[Number(j.dataset.ji)]); }
+  const er = e.target.closest && e.target.closest('button.judge[data-ei]'); if (er) { noteOpener(er, 'button.judge', 'data-ei'); openError(TL[Number(er.dataset.ei)]); }
 });
 let TL = []; // 描画中のタイムライン行（判定の詳細をクリックで開くために保持）
 let LATEST = -1; // TL の中で一番新しい行の index
@@ -678,14 +683,14 @@ function pm(r){
   if (r.switchFrom) return '<span class="sw" title="レート上限などで切替">'+esc(r.switchFrom)+' → '+cur+'</span>'; // 切替があった開始行は黄色で「切替前 → 切替後」
   const t = r.source==='log' ? '' : ' title="実行ログに記録が無いため設定（'+escA(r.source)+'）からの推定"'; return '<span'+t+'>'+cur+'</span>';
 }
-function repLinks(r){ return (r.reports||[]).map(rel => '<a class="rep" data-rel="'+escA(rel)+'">'+esc(rel.split('/').pop())+'</a>').join(' '); }
+function repLinks(r){ return (r.reports||[]).map(rel => '<button type="button" class="rep" data-rel="'+escA(rel)+'">'+esc(rel.split('/').pop())+'</button>').join(' '); }
 // 判定結果のラベル（rule 名そのまま）。クリックで judge の reason を開く。ラベルが無く stage だけある場合は「判定」
 function judgeLink(r, i){
-  if ((!r.judge || (!r.judge.label && !r.judge.stages.length)) && r.errors && r.errors.length) return '<a class="judge j-rejected" data-ei="'+i+'" title="クリックでエラーの内容を表示">エラー</a>';
+  if ((!r.judge || (!r.judge.label && !r.judge.stages.length)) && r.errors && r.errors.length) return '<button type="button" class="judge j-rejected" data-ei="'+i+'" title="クリックでエラーの内容を表示">エラー</button>';
   if (!r.judge || (!r.judge.label && !r.judge.stages.length)) return '';
   const label = r.judge.label || '判定ログ';
   const cls = /^approve/i.test(label) ? 'j-approved' : /^reject/i.test(label) ? 'j-rejected' : '';
-  return '<a class="judge '+cls+'" data-ji="'+i+'" title="'+escA(label)+'（クリックで判定理由を表示）">'+esc(label)+'</a>';
+  return '<button type="button" class="judge '+cls+'" data-ji="'+i+'" title="'+escA(label)+'（クリックで判定理由を表示）">'+esc(label)+'</button>';
 }
 function openJudge(r){
   const j = r.judge;
@@ -701,7 +706,7 @@ function openJudge(r){
   document.getElementById('vtitle').textContent = r.step + ' の判定（iter ' + it + (attempt ? '・' + attempt + ' 回目' : '') + '）';
   const body = document.getElementById('vbody'); body.textContent = lines.join('\\n'); body.scrollTop = 0;
   body.style.fontSize = '14px'; // 判定の理由は短い文章なのでレポートより大きく
-  document.getElementById('viewer').style.display = 'flex';
+  showViewer();
 }
 // ---------- タイムラインの高さ（下端のバーをドラッグ。localStorage に保存） ----------
 // 上段（実行中のタスク + タイムライン）は一体で、下のバーをドラッグすると両方の高さが変わる。経路はそれに合わせて上下する
@@ -733,7 +738,7 @@ function pathModel(tl, meta){
   return nodes;
 }
 function cardHtml(n, big){
-  const j = n.ji>=0 ? ' has-j" data-ji="'+n.ji : '';
+  const j = n.ji>=0 ? ' has-j" role="button" tabindex="0" data-ji="'+n.ji : ''; // 判定を開けるノードだけキーボードで操作できるようにする
   const t = ' title="'+escA((n.ts?jst(n.ts):'')+(n.tsEnd?' → '+jst(n.tsEnd):''))+'"';
   const jc = n.label ? (/^approve/i.test(n.label) ? ' j-approved' : /^(reject|needs_fix)/i.test(n.label) ? ' j-rejected' : '') : '';
   const label = n.label ? '<span class="jl'+jc+'" title="'+escA(n.label)+'">'+esc(n.label)+'</span>' : (n.reason ? '<span class="jl">'+esc(n.reason)+'</span>' : '<span class="muted">'+esc(n.status ?? (n.cls==='run'?'実行中':''))+'</span>');
@@ -774,13 +779,17 @@ function drawEdges(){
   svg.innerHTML = d;
 }
 window.addEventListener('resize', drawEdges);
-document.addEventListener('click', (e) => { const n = e.target.closest && e.target.closest('.node.has-j'); if (n) openJudge(TL[Number(n.dataset.ji)]); });
+function openNode(n){ noteOpener(n, '.node.has-j', 'data-ji'); openJudge(TL[Number(n.dataset.ji)]); }
+document.addEventListener('click', (e) => { const n = e.target.closest && e.target.closest('.node.has-j'); if (n) openNode(n); });
+// role="button" の <div> は Enter / Space で click にならないので自分で開く。Space の既定動作（ページのスクロール）は止める。
+// ノード自身がフォーカスされているときだけ反応する（モーダルの中などで押したキーを拾わないように）
+document.addEventListener('keydown', (e) => { const n = e.target; if ((e.key === 'Enter' || e.key === ' ') && n.matches && n.matches('.node.has-j')) { e.preventDefault(); openNode(n); } });
 function openError(r){
   const lines = [];
   for (const e of r.errors) { lines.push(jst(e.ts) + '  ' + e.phase + ' → ' + e.status); lines.push(e.text); lines.push(''); }
   document.getElementById('vtitle').textContent = r.step + ' のエラー';
   const body = document.getElementById('vbody'); body.textContent = lines.join('\\n'); body.scrollTop = 0; body.style.fontSize = '13px';
-  document.getElementById('viewer').style.display = 'flex';
+  showViewer();
 }
 function rowHtml(r, i){
   if (r.kind==='step') return '<tr'+(i===LATEST?' class="latest"':'')+'><td class="ts">'+jst(r.ts)+'</td><td class="step">▶ '+esc(r.step)+(r.workflow&&r.workflow!=='default'?' <span class="muted">['+esc(r.workflow)+']</span>':'')+' <span class="muted">· '+r.iteration+'/'+(MAX ?? '?')+'</span></td><td class="pm">'+pm(r)+'</td><td class="reps" colspan="2">'+repLinks(r)+'</td></tr>';
@@ -809,10 +818,26 @@ async function openReport(rel){
   const t = await (await fetch('/api/report?p='+encodeURIComponent(rel)+(selectedRun ? '&run='+encodeURIComponent(selectedRun) : ''))).text();
   document.getElementById('vtitle').textContent = rel;
   const body = document.getElementById('vbody'); body.textContent = t; body.scrollTop = 0; body.style.fontSize = '';
-  document.getElementById('viewer').style.display = 'flex';
+  showViewer();
 }
-function closeViewer(){ document.getElementById('viewer').style.display = 'none'; }
-document.addEventListener('keydown', e => { if (e.key==='Escape') closeViewer(); });
+// モーダルを開いた要素。閉じたらそこへフォーカスを戻す。
+// 開いている間に 2 秒ごとの再描画で #app が作り直されると元の要素は DOM から外れるので、セレクタと「同じセレクタの何番目か」も覚えて探し直す
+// （同じ data-ji の判定がタスク欄・タイムライン・経路に出るので、種類と番目で見分ける）。
+// openReport は fetch を待ってから開くので、待つ間に再描画が走っても困らないよう、クリック・キーの時点で記録する
+let viewerOpener = null;
+function noteOpener(el, sel, attr){
+  const full = sel + '[' + attr + '="' + CSS.escape(el.getAttribute(attr)) + '"]';
+  viewerOpener = { el, full, index: [...document.querySelectorAll(full)].indexOf(el) };
+}
+// showModal で背景を操作できなくし（Tab・クリックとも）、フォーカスを中へ移す。開いたまま別の内容に切り替えるときは呼び直さない
+function showViewer(){ const v = document.getElementById('viewer'); if (!v.open) v.showModal(); }
+function closeViewer(){ const v = document.getElementById('viewer'); if (v.open) v.close(); }
+// Esc（dialog 標準）・×・背景のどれで閉じてもここを通る
+document.getElementById('viewer').addEventListener('close', () => {
+  const o = viewerOpener; viewerOpener = null; if (!o) return;
+  const el = o.el.isConnected ? o.el : document.querySelectorAll(o.full)[o.index];
+  if (el) el.focus();
+});
 // 背景（モーダルの外側）クリックで閉じる。box 内で文字選択して外で離した場合は閉じない（mousedown も背景のときだけ）
 const viewerEl = document.getElementById('viewer'); let viewerDown = null;
 viewerEl.addEventListener('mousedown', e => { viewerDown = e.target; });
@@ -901,7 +926,7 @@ async function tick(){
       <div class="bar"><div style="width:\${pct}%"></div></div>
       <div class="row" style="margin-top:8px"><span class="k">経過時間</span><span id="elapsed">\${fmt(end - new Date(m.startTime).getTime())}</span></div>
       \${(m.resume_point?.stack ?? []).length > 1 ? '<div class="stack">'+stack+'</div>' : ''}
-      \${a.reports.length ? '<h2 style="margin-top:14px">未分類のレポート</h2><div id="reps" class="scroll" style="overflow:auto;max-height:160px">'+a.reports.slice().reverse().map(r => '<div class="row"><a class="rep" data-rel="'+escA(r.rel)+'">'+esc(r.rel)+'</a><span class="k">'+r.size+' B</span></div>').join('')+'</div>' : ''}
+      \${a.reports.length ? '<h2 style="margin-top:14px">未分類のレポート</h2><div id="reps" class="scroll" style="overflow:auto;max-height:160px">'+a.reports.slice().reverse().map(r => '<div class="row"><button type="button" class="rep" data-rel="'+escA(r.rel)+'">'+esc(r.rel)+'</button><span class="k">'+r.size+' B</span></div>').join('')+'</div>' : ''}
     </section>
     <section class="c4 toprow" style="height:\${TL_H}px">
       <h2>タイムライン</h2>
