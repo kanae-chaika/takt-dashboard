@@ -618,9 +618,9 @@ const HTML = `<!DOCTYPE html>
   section.toprow { overflow:auto; }
   .rz::after { content:''; position:absolute; left:50%; top:5px; width:36px; height:3px; margin-left:-18px; border-radius:2px; background:var(--line); }
   .rz:hover::after { background:var(--dim); }
-  .pathsec { position:relative; }
-  .pathsec h2 { margin-bottom:4px; } /* 図との間は詰める */
-  .path { position:relative; overflow:auto; padding:4px 8px 2px; }
+  .pathsec { position:relative; padding:8px 10px 6px; } /* 経路は余白を最小に */
+  .pathsec h2 { margin-bottom:2px; }
+  .path { position:relative; overflow:auto; padding:0 2px; }
   .lane { position:relative; display:flex; align-items:center; gap:48px; width:max-content; }
   .node { position:relative; background:#0d110f; border:1px solid var(--line); border-radius:8px; padding:6px 12px; min-width:140px; cursor:default; line-height:1.45; }
   .node.has-j { cursor:pointer; }
@@ -769,7 +769,7 @@ function openError(r){
   const lines = [];
   for (const e of r.errors) { lines.push(jst(e.ts) + '  ' + e.phase + ' → ' + e.status); lines.push(e.text); lines.push(''); }
   document.getElementById('vtitle').textContent = r.step + ' のエラー';
-  const body = document.getElementById('vbody'); body.textContent = lines.join('\n'); body.scrollTop = 0; body.style.fontSize = '13px';
+  const body = document.getElementById('vbody'); body.textContent = lines.join('\\n'); body.scrollTop = 0; body.style.fontSize = '13px';
   document.getElementById('viewer').style.display = 'flex';
 }
 function rowHtml(r, i){
@@ -937,6 +937,6 @@ createServer((req, res) => {
     res.end(t ?? 'not found');
     return;
   }
-  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); // 再起動後に古いページが使われないように
   res.end(HTML);
 }).listen(PORT, () => console.log('takt-dashboard: http://localhost:' + PORT));
