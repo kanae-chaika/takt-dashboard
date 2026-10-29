@@ -577,3 +577,17 @@ test('再描画で前に行が増えて data-ji の添字がずれても、フ�
     });
   }
 });
+
+test('run が完了してタスク欄に同じ判定が増えても、フォーカスは元の表示箇所（タイムライン）の判定に残る', async (t) => {
+  const writeMeta = (m) => fs.writeFileSync(path.join(RUN, 'meta.json'), JSON.stringify(m));
+  t.after(() => writeMeta(META));
+  writeMeta({ ...META, status: 'running', updatedAt: '2026-10-29T01:00:50.000Z' });
+  const page = await renderedPage();
+  const d = page.document;
+  assert.equal(d.querySelectorAll('.judge[data-ji]').length, 1, '実行中はタスク欄に最終判定が無い（前提）');
+  d.querySelector('#tl .judge[data-ji]').focus();
+  writeMeta({ ...META, updatedAt: '2026-10-29T01:00:51.000Z' });
+  await page.ctx.tick();
+  assert.equal(d.querySelectorAll('.judge[data-ji]').length, 2, '完了でタスク欄に最終判定が増えた（前提）');
+  assertSameElement(d.activeElement, d.querySelector('#tl .judge[data-ji]'), '再描画後のフォーカス');
+});

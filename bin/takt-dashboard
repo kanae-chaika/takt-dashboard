@@ -827,18 +827,21 @@ function focusKey(el, attr){
   const v = el.getAttribute(attr); if (attr === 'data-rel') return v;
   const r = TL[Number(v)]; return r ? [r.kind, r.key ?? r.step, r.phase ?? '', r.ts ?? ''].join('|') : null;
 }
-// 2 秒ごとの再描画で #app が作り直されると元の要素は DOM から外れるので、種類・行・「同じ種類と行の何番目か」を覚えて探し直す
-// （同じ判定がタスク欄・タイムライン・経路に出るので、種類と番目で見分ける）。TL を描き直す前に呼ぶこと。開く要素でなければ null
+// 2 秒ごとの再描画で #app が作り直されると元の要素は DOM から外れるので、種類・行・表示箇所・「その中の何番目か」を覚えて探し直す
+// （同じ判定がタスク欄・タイムライン・経路に出るので、種類・表示箇所・番目で見分ける）。TL を描き直す前に呼ぶこと。開く要素でなければ null
 function locate(el){
   for (const [sel, attr] of FOCUS_KINDS) {
     const full = sel + '[' + attr + ']';
     if (!el.matches(full)) continue;
-    const key = focusKey(el, attr);
-    return { el, full, attr, key, index: [...document.querySelectorAll(full)].filter((x) => focusKey(x, attr) === key).indexOf(el) };
+    const key = focusKey(el, attr), area = areaOf(el);
+    return { el, full, attr, key, area, index: sameAs(full, attr, key, area).indexOf(el) };
   }
   return null;
 }
-function relocate(o){ return [...document.querySelectorAll(o.full)].filter((x) => focusKey(x, o.attr) === o.key)[o.index]; }
+// 表示箇所（タイムライン・経路・未分類のレポート・それ以外=タスク欄）。run が完了するとタスク欄に最終判定が増え、番目だけでは別の箇所の同じ判定に移ってしまうため
+function areaOf(el){ const c = el.closest('#tl, #path, #reps'); return c ? c.id : ''; }
+function sameAs(full, attr, key, area){ return [...document.querySelectorAll(full)].filter((x) => focusKey(x, attr) === key && areaOf(x) === area); }
+function relocate(o){ return sameAs(o.full, o.attr, o.key, o.area)[o.index]; }
 // モーダルを開いた要素。閉じたらそこへフォーカスを戻す。
 // openReport は fetch を待ってから開くので、待つ間に再描画が走っても困らないよう、クリック・キーの時点で記録する
 let viewerOpener = null;
