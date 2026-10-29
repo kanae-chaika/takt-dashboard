@@ -57,7 +57,8 @@ async function startServer(extraArgs) {
   try {
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('takt-dashboard が起動しない: ' + stderr)), 10000);
-      child.stdout.on('data', (d) => { if (String(d).includes('takt-dashboard: http://localhost:')) { clearTimeout(timer); resolve(); } });
+      let stdout = ''; // 起動メッセージが複数の data に分かれても見つけられるよう、連結してから探す
+      child.stdout.on('data', (d) => { stdout += d; if (stdout.includes('takt-dashboard: http://localhost:')) { clearTimeout(timer); resolve(); } });
       child.on('exit', (code) => { clearTimeout(timer); reject(new Error('takt-dashboard が起動前に終了した (code ' + code + '): ' + stderr)); });
     });
   } catch (e) {
@@ -84,6 +85,7 @@ let listed; // --roots で WT_INT・WT_RUN を一覧に入れる
 let fixedInt; // <run_dir> に INT_RUN
 let fixedRunning; // <run_dir> に RUNNING_RUN
 let fixedUi; // <run_dir> に UI_RUN
+const servers = []; // 起動できたサーバ。after() で全部止める
 
 before(async () => {
   fs.mkdirSync(HOME, { recursive: true });
@@ -96,17 +98,22 @@ before(async () => {
   fs.mkdirSync(UI_PROJ, { recursive: true });
   fs.writeFileSync(path.join(UI_PROJ, 'state.json'), JSON.stringify({ canonicalDirectory: CANON }));
   writeRun(UI_RUN, { status: 'completed', runSlug: '20261029-090000-ui', task: '# UI のタスク', updatedAt: '2026-10-29T09:00:00.000Z' });
-  [plain, listed, fixedInt, fixedRunning, fixedUi] = await Promise.all([
+  // allSettled で全部の起動を待ってから、起動できたものを記録する（1 つ失敗しても、起動済みのものを after() で止められるように）
+  const results = await Promise.allSettled([
     startServer([]),
     startServer(['--roots', WT_INT + ',' + WT_RUN]),
     startServer([INT_RUN]),
     startServer([RUNNING_RUN]),
     startServer([UI_RUN]),
   ]);
+  servers.push(...results.filter((r) => r.status === 'fulfilled').map((r) => r.value));
+  const failed = results.find((r) => r.status === 'rejected');
+  if (failed) throw failed.reason;
+  [plain, listed, fixedInt, fixedRunning, fixedUi] = results.map((r) => r.value);
 });
 
 after(async () => {
-  await Promise.all([plain, listed, fixedInt, fixedRunning, fixedUi].map(stopServer));
+  await Promise.all(servers.map(stopServer));
   fs.rmSync(ROOT, { recursive: true, force: true });
 });
 
