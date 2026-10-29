@@ -1,0 +1,96 @@
+# takt-dashboard
+
+[TAKT](https://github.com/nrslib/takt) の run をブラウザで見張るローカルダッシュボードです。
+依存ライブラリなし（Node.js 標準ライブラリのみ）、1 ファイルで動きます。
+
+[English](#english) is below.
+
+## できること
+
+- **タイムライン**: ステップの開始・完了を時刻順に。並列ステップは子ごとに木にして、execute / report / judge の終了時刻を並べる
+- **判定結果**: 各ステップ・子の judge 結果（`approved` / `needs_fix` / 一致した rule 名）を行に表示。クリックで judge の理由（structured output の reason）を開く
+- **実行経路**: 公式 Web UI の実行経路に似たカード + ポート + 曲線の図。並列は枠の中に子を縦に並べ、リトライは枠が 2 つ並ぶ
+- **レート上限・リトライ**: `rate_limited` で中断 → リトライした経緯と、provider の切替（`codex/gpt-5 → claude/sonnet`）を開始行に表示
+- **中断・失敗**: プロセスが落ちて `running` のまま残った run を「中断」と判定し、どのステップで止まったかを終了行に出す。失敗は理由（`rule_no_match` など）と judge のエラーログ付き
+- **provider / model**: 並列の子はログに provider が無いので、run 開始時点の `~/.takt/runtime.yaml`（または `config.yaml`）から引く。run ごとに結果を保存するので、後から yaml を変えても過去の表示は変わらない
+- **レポート**: run の `reports/*.md` をステップに紐づけて一覧。クリックで本文を表示
+- 複数リポジトリ・worktree の run をまとめて一覧。2 秒ごとに自動更新
+
+## 使い方
+
+```bash
+# 依存なし。リポジトリを clone して直接実行
+git clone https://github.com/kanae-chaika/takt-dashboard.git
+cd takt-dashboard
+node bin/takt-dashboard --roots ~/git,~/git/takt-worktrees
+# → http://localhost:7331
+```
+
+| オプション | 説明 |
+|---|---|
+| `--roots a,b` | run を探すディレクトリ。指定したディレクトリと、その直下のディレクトリ（リポジトリ・worktree）の `.takt/runs` を見る。環境変数 `TAKT_DASHBOARD_ROOTS` でも可 |
+| `--port N` | ポート（既定 7331） |
+| `<run_dir>` | 表示する run ディレクトリを固定 |
+
+カレントディレクトリと `~/.takt`（`takt ui` から起動した run）は指定しなくても見ます。
+
+## 過去の run の provider / model を正しく出すために
+
+並列の子ステップは takt のログに provider / model が記録されません。そのため設定ファイルから引きますが、設定を後から変えると過去の run の表示が変わってしまいます。
+
+これを避けるため、`~/.takt/runtime.yaml` や `config.yaml` を変更するときは、変更前のファイルを次の名前で残しておくと、ダッシュボードが「run 開始時点で有効だった設定」を自動で選びます。
+
+```
+~/.takt/runtime.yaml.bak-20261025-copilot-quota   # 変更前の内容。ファイルの更新時刻 = 置き換えた時刻
+~/.takt/config.yaml.bak.20261020-runtime-v1
+```
+
+- `runtime.yaml.bak` / `config.yaml.bak` で始まる名前なら、後ろは自由
+- 選んだ結果は `~/.takt/dashboard/routing/<run slug>.json` に保存され、以後は固定
+- バックアップが無い場合は現在の設定値を使います（hover で「設定からの推定」と表示）
+
+## 注意
+
+- TAKT の Web UI と run のログ形式は「実験的機能」で、予告なく変わります。takt **0.73.0** のログで動作確認しています。追従は約束しません
+- run のデータは worktree 側の `.takt/runs/` にあります。`takt list` でタスクを削除すると、その run はダッシュボードからも消えます
+- ローカル専用です（`localhost` にしか bind しません）。認証はありません
+
+## ライセンス
+
+MIT
+
+---
+
+## English
+
+A local web dashboard for watching [TAKT](https://github.com/nrslib/takt) runs. Single file, no dependencies (Node.js standard library only).
+
+**Features**
+
+- Timeline of step starts/ends; parallel steps are grouped per child with execute / report / judge end times
+- Judge results per step (`approved`, `needs_fix`, matched rule name) inline; click to see the judge's reason
+- Execution path view (cards, ports and curves) similar to the official Web UI, including parallel fan-out and retries
+- Rate-limit interruptions, retries and provider switches shown on the step's start row
+- Detects runs whose process died while `running` and marks them "interrupted" with the step that was in flight; failed runs show the reason and the judge error log
+- Resolves provider/model for parallel children from `~/.takt/runtime.yaml` (or `config.yaml`) **as of the run's start time**, using dated backups (`runtime.yaml.bak-*`, `config.yaml.bak.*`) when present; the result is saved per run under `~/.takt/dashboard/routing/`
+- Lists runs across multiple repositories and worktrees; refreshes every 2 seconds
+
+**Usage**
+
+```bash
+git clone https://github.com/kanae-chaika/takt-dashboard.git
+cd takt-dashboard
+node bin/takt-dashboard --roots ~/git,~/git/takt-worktrees   # → http://localhost:7331
+```
+
+| Option | Description |
+|---|---|
+| `--roots a,b` | Directories to scan: each one and its immediate subdirectories are checked for `.takt/runs`. Also `TAKT_DASHBOARD_ROOTS` |
+| `--port N` | Port (default 7331) |
+| `<run_dir>` | Pin a specific run directory |
+
+The current directory and `~/.takt` (runs started from `takt ui`) are always scanned.
+
+**Caveats**: TAKT's run log format is experimental and may change; verified against takt 0.73.0. Run data lives in each worktree's `.takt/runs/`, so deleting a task in `takt list` removes it from the dashboard too. Binds to localhost only, no authentication.
+
+License: MIT
