@@ -524,7 +524,9 @@ function state(sel, showAll = false) {
     // 直前の「■ step → error」行と同じ失敗なので、エラーのリンクは失敗行だけに出す（同じ内容が 2 行に並ばないように）
     const prev = tl.rows[tl.rows.length - 1];
     if (prev && prev.kind === 'done' && lastStart && prev.key === lastStart.key && prev.status !== 'done') delete prev.errors;
-    tl.rows.push({ ts: m.endTime ?? m.updatedAt, kind: 'end', status: m.status, step, key: key ?? '', reason: m.reason ?? m.failure?.error ?? '', judge: key ? tl.judges[key] : null, errors: lastStart ? (tl.errors[lastStart.key] ?? null) : null });
+    // 理由が『Step "<step>" failed: …』の形なら、ステップ名は行頭に出しているので重複する前置きを落とす
+    const reason = String(m.reason ?? m.failure?.error ?? '').replace(new RegExp('^Step "' + step.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '" failed:\\s*'), '');
+    tl.rows.push({ ts: m.endTime ?? m.updatedAt, kind: 'end', status: m.status, step, key: key ?? '', reason, judge: key ? tl.judges[key] : null, errors: lastStart ? (tl.errors[lastStart.key] ?? null) : null });
   }
   const tasks = tasksYamlFor(active.root);
   const runs = runList(active, limit);
