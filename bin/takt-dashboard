@@ -796,7 +796,7 @@ function rowHtml(r, i){
   }
   if (r.kind==='end') {
     const intr = r.status==='interrupted';
-    return '<tr class="'+(intr?'interrupted':'alert')+(i===LATEST?' latest':'')+'"><td class="ts">'+jst(r.ts)+'</td><td class="step" colspan="4">'+(intr?'⏹ 中断':'✖ '+esc(r.status))+(r.step?' <span style="font-weight:normal">'+esc(r.step)+'</span>':'')+(r.reason?' <span style="font-weight:normal">→ '+esc(r.reason)+'</span>':'')+' '+judgeLink(r, i)+'</td></tr>';
+    return '<tr class="'+(intr?'interrupted':'alert')+(i===LATEST?' latest':'')+'"><td class="ts">'+jst(r.ts)+'</td><td class="step" colspan="4">'+(intr?'⏹ 中断':'✖ '+(r.status==='failed'?'失敗':r.status==='aborted'?'中止':esc(r.status)))+(r.step?' <span style="font-weight:normal">'+esc(r.step)+(r.reason?'（'+esc(r.reason)+'）':'')+'</span>':'')+' '+judgeLink(r, i)+'</td></tr>';
   }
   return '<tr class="alert"><td class="ts">'+jst(r.ts)+'</td><td colspan="4">‼ '+esc(r.type)+' '+esc(r.step)+' '+esc(r.reason)+' '+esc(r.error.slice(0,300))+'</td></tr>';
 }
