@@ -40,7 +40,8 @@ async function startServer() {
   try {
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('takt-dashboard が起動しない: ' + stderr)), 10000);
-      child.stdout.on('data', (d) => { if (String(d).includes('takt-dashboard: http://localhost:')) { clearTimeout(timer); resolve(); } });
+      let stdout = ''; // 起動メッセージが複数の data に分かれても見つけられるよう、連結してから探す
+      child.stdout.on('data', (d) => { stdout += d; if (stdout.includes('takt-dashboard: http://localhost:')) { clearTimeout(timer); resolve(); } });
       child.on('exit', (code) => { clearTimeout(timer); reject(new Error('takt-dashboard が起動前に終了した (code ' + code + '): ' + stderr)); });
     });
   } catch (e) {
