@@ -2,14 +2,11 @@
 // 実行: node --test test/takt-dashboard.test.js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { createServer } from 'node:net';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { spawnDashboard, startDashboard as startChild, stopDashboard } from './helpers.js';
 
-const BIN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'bin', 'takt-dashboard');
 const STARTUP_TIMEOUT_MS = 5000;
 
 // 実際の ~/.takt や ~/.config/takt-dashboard を読ませないよう、HOME と cwd を一時ディレクトリにする
@@ -25,45 +22,20 @@ function makeRun(runDir, meta = { status: 'completed', runSlug: path.basename(ru
   return runDir;
 }
 
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const srv = createServer();
-    srv.once('error', reject);
-    srv.listen(0, '127.0.0.1', () => { const { port } = srv.address(); srv.close(() => resolve(port)); });
-  });
-}
+// PATH を空にして、手元にインストールされた takt 本体（taktPackageDir が PATH から探す）を読ませない
+const ENV = { PATH: '', TAKT_DASHBOARD_ROOTS: '' };
 
-function spawnDashboard(t, sandbox, extraArgs, port) {
-  const env = { ...process.env, HOME: sandbox, PATH: '', TAKT_DASHBOARD_ROOTS: '' };
-  delete env.TAKT_DASHBOARD_PORT;
-  const proc = spawn(process.execPath, [BIN, ...extraArgs, '--port', String(port)], { cwd: sandbox, env, stdio: ['ignore', 'pipe', 'pipe'] });
-  const out = { stdout: '', stderr: '' };
-  proc.stdout.on('data', (d) => { out.stdout += d; });
-  proc.stderr.on('data', (d) => { out.stderr += d; });
-  // 'exit' の時点では stdout / stderr が読み終わっていないことがあるので、閉じた後の 'close' を待つ
-  const exited = new Promise((resolve) => proc.once('close', (code, signal) => resolve({ code, signal })));
-  t.after(() => { if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGKILL'); });
-  return { proc, out, exited };
-}
-
-// 起動メッセージが出るまで待つ。先に終了したら、その時点の出力を添えて失敗させる
+// 起動メッセージが出るまで待つ。テストの終わりに止める
 async function startDashboard(t, sandbox, extraArgs = []) {
-  const port = await freePort();
-  const d = spawnDashboard(t, sandbox, extraArgs, port);
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('起動待ちがタイムアウト: ' + JSON.stringify(d.out))), STARTUP_TIMEOUT_MS);
-    const check = () => { if (d.out.stdout.includes('http://localhost:' + port)) { clearTimeout(timer); resolve(); } };
-    d.proc.stdout.on('data', check);
-    d.exited.then((r) => { clearTimeout(timer); reject(new Error('起動前に終了: ' + JSON.stringify({ ...r, ...d.out }))); });
-    check();
-  });
-  return { ...d, base: 'http://127.0.0.1:' + port };
+  const d = await startChild({ cwd: sandbox, home: sandbox, args: extraArgs, env: ENV });
+  t.after(() => stopDashboard(d));
+  return d;
 }
 
 // 起動時に終了することを期待するケース。時間内に終わらなければ kill して「終了しなかった」と分かる結果を返す
 async function runUntilExit(t, sandbox, extraArgs) {
-  const port = await freePort();
-  const d = spawnDashboard(t, sandbox, extraArgs, port);
+  const d = spawnDashboard({ cwd: sandbox, home: sandbox, args: extraArgs, env: ENV });
+  t.after(() => stopDashboard(d));
   const timeout = new Promise((resolve) => setTimeout(() => resolve('timeout'), STARTUP_TIMEOUT_MS));
   const r = await Promise.race([d.exited, timeout]);
   if (r === 'timeout') { d.proc.kill('SIGKILL'); await d.exited; return { code: null, timedOut: true, ...d.out }; }

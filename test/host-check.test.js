@@ -4,14 +4,11 @@
 // fetch は Host ヘッダーを上書きできないので、node:http の request で headers.host を指定して送る。接続先は常に 127.0.0.1（listen 先）で、変えるのは Host ヘッダーだけ
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { fileURLToPath } from 'node:url';
-
-const BIN = fileURLToPath(new URL('../bin/takt-dashboard', import.meta.url));
+import { startDashboard, stopDashboard } from './helpers.js';
 
 const ROOT = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'takt-dashboard-test-')));
 const HOME = path.join(ROOT, 'home');
@@ -19,7 +16,6 @@ const REPO = path.join(ROOT, 'repo');
 const RUN = path.join(REPO, '.takt', 'runs', '20261029-100000-host');
 const REPORT = 'host-check の plan レポート\n';
 
-// --port 0 で起動し、OS が選んだポートを起動メッセージから読む（空きポートを先に調べてから渡すと、その間に別のプロセスに取られることがある）
 // 7331（既定ポート）に当たったら取り直す。既定ポートと同じだと「ポートを 7331 で固定した誤実装」を区別できない
 async function startServer() {
   for (;;) {
@@ -28,35 +24,8 @@ async function startServer() {
     await stopServer(s);
   }
 }
-
-async function launchServer() {
-  let port = 0;
-  const env = { ...process.env, HOME };
-  delete env.TAKT_DASHBOARD_ROOTS;
-  delete env.TAKT_DASHBOARD_PORT;
-  const child = spawn(process.execPath, [BIN, '--port', String(port)], { cwd: REPO, env, stdio: ['ignore', 'pipe', 'pipe'] });
-  let stderr = '';
-  child.stderr.on('data', (d) => { stderr += d; });
-  try {
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('takt-dashboard が起動しない: ' + stderr)), 10000);
-      let stdout = ''; // 起動メッセージが複数の data に分かれても見つけられるよう、連結してから探す。ポート番号が途中で切れないよう行末（\n）まで待つ
-      child.stdout.on('data', (d) => { stdout += d; const m = stdout.match(/takt-dashboard: http:\/\/localhost:(\d+)\n/); if (m) { clearTimeout(timer); port = Number(m[1]); resolve(); } });
-      child.on('exit', (code) => { clearTimeout(timer); reject(new Error('takt-dashboard が起動前に終了した (code ' + code + '): ' + stderr)); });
-    });
-  } catch (e) {
-    await stopServer({ child }); // 起動待ちで失敗しても子プロセスを残さない（残るとテストが終わらない）
-    throw e;
-  }
-  return { child, port };
-}
-
-async function stopServer(server) {
-  if (!server || server.child.exitCode !== null || server.child.signalCode !== null) return; // シグナルで終了済みなら exitCode は null のまま
-  const exited = new Promise((resolve) => server.child.once('exit', resolve));
-  server.child.kill('SIGTERM');
-  await exited;
-}
+const launchServer = () => startDashboard({ cwd: REPO, home: HOME });
+const stopServer = stopDashboard;
 
 // host が null のときは Host ヘッダーを付けずに送る（setHost: false）
 function get(requestPath, host, port = server.port) {

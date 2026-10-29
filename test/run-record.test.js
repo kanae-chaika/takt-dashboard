@@ -3,14 +3,10 @@
 // bin/takt-dashboard を子プロセスで起動し、/api/state の active.root と active.meta.status で確認する。HOME と cwd は一時ディレクトリにして、実環境の ~/.takt や ~/.config/takt-dashboard を読ませない
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import net from 'node:net';
-import { fileURLToPath } from 'node:url';
-
-const BIN = fileURLToPath(new URL('../bin/takt-dashboard', import.meta.url));
+import { startDashboard, stopDashboard } from './helpers.js';
 
 // tasks.yaml の worktree_path と root を文字列で比べるので、期待値も実パスにそろえる
 const ROOT = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'takt-dashboard-test-')));
@@ -38,42 +34,8 @@ function writeTasks(worktree, task) {
   fs.writeFileSync(path.join(worktree, '.takt', 'tasks.yaml'), lines.join('\n') + '\n');
 }
 
-function freePort() {
-  return new Promise((resolve, reject) => {
-    const srv = net.createServer();
-    srv.on('error', reject);
-    srv.listen(0, '127.0.0.1', () => { const { port } = srv.address(); srv.close(() => resolve(port)); });
-  });
-}
-
-async function startServer(extraArgs) {
-  const port = await freePort();
-  const env = { ...process.env, HOME };
-  delete env.TAKT_DASHBOARD_ROOTS;
-  delete env.TAKT_DASHBOARD_PORT;
-  const child = spawn(process.execPath, [BIN, '--port', String(port), ...extraArgs], { cwd: REPO, env, stdio: ['ignore', 'pipe', 'pipe'] });
-  let stderr = '';
-  child.stderr.on('data', (d) => { stderr += d; });
-  try {
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('takt-dashboard が起動しない: ' + stderr)), 10000);
-      let stdout = ''; // 起動メッセージが複数の data に分かれても見つけられるよう、連結してから探す
-      child.stdout.on('data', (d) => { stdout += d; if (stdout.includes('takt-dashboard: http://localhost:')) { clearTimeout(timer); resolve(); } });
-      child.on('exit', (code) => { clearTimeout(timer); reject(new Error('takt-dashboard が起動前に終了した (code ' + code + '): ' + stderr)); });
-    });
-  } catch (e) {
-    await stopServer({ child }); // 起動待ちで失敗しても子プロセスを残さない（残るとテストが終わらない）
-    throw e;
-  }
-  return { child, base: 'http://127.0.0.1:' + port };
-}
-
-async function stopServer(server) {
-  if (!server || server.child.exitCode !== null || server.child.signalCode !== null) return; // シグナルで終了済みなら exitCode は null のまま
-  const exited = new Promise((resolve) => server.child.once('exit', resolve));
-  server.child.kill('SIGTERM');
-  await exited;
-}
+const startServer = (args) => startDashboard({ cwd: REPO, home: HOME, args });
+const stopServer = stopDashboard;
 
 const getState = async (server, query = '') => (await fetch(server.base + '/api/state' + query)).json();
 const runParam = (runDir) => '?run=' + encodeURIComponent(runDir);
