@@ -476,19 +476,23 @@ function taskForRoot(root, cache) {
   return cache.get(root).find((t) => t.worktree_path && t.worktree_path === root) || null;
 }
 // 一覧は新しい 20 件。表示中の run がそれより古いときは先頭に足す（ドロップダウンに無いと別の run が選ばれて見える）
-function runList(active = null) {
+function runList(active = null, limit = 20) {
   const cache = new Map();
   const all = findRuns();
-  const top = all.slice(0, 20);
+  const top = all.slice(0, limit);
+  top.total = all.length;
   if (active && !top.some((r) => r.runDir === active.runDir)) { const me = all.find((r) => r.runDir === active.runDir) ?? active; top.unshift(me); }
-  return top.map((r) => {
+  const list = top.map((r) => {
     const t = taskForRoot(r.root, cache);
     return { runDir: r.runDir, status: r.meta.status, slug: r.meta.runSlug, step: r.meta.currentStep, updatedAt: r.meta.updatedAt, label: t ? (t.summary || t.name) : (r.label ?? null) };
   });
+  list.total = all.length;
+  return list;
 }
-function state(sel) {
+function state(sel, showAll = false) {
+  const limit = showAll ? Infinity : 20;
   const active = currentRun(sel);
-  if (!active) return { active: null, runs: runList() };
+  if (!active) { const runs = runList(null, limit); return { active: null, runs, runsTotal: runs.total }; }
   const routing = routingFor(active.runDir, active.meta.startTime);
   const tl = timeline(active.runDir, routing);
   // 中断・失敗した run は、終わった時刻を最後の行にする。失敗は meta.endTime と meta.reason / meta.failure（例: rule_no_match）、
@@ -514,8 +518,9 @@ function state(sel) {
     tl.rows.push({ ts: m.endTime ?? m.updatedAt, kind: 'end', status: m.status, step, key: key ?? '', reason: m.reason ?? m.failure?.error ?? '', judge: key ? tl.judges[key] : null });
   }
   const tasks = tasksYamlFor(active.root);
+  const runs = runList(active, limit);
   return {
-    runs: runList(active),
+    runs, runsTotal: runs.total,
     active: { meta: active.meta, runDir: active.runDir, root: active.root, reports: tl.unmatched, maxSteps: maxStepsFor(active.meta.workflow, active.root) },
     timeline: tl.rows,
     lastOutput: tl.lastOutput,
@@ -799,12 +804,13 @@ function demoize(st){
   st.lastOutput = null; st.tasksPath = null;
   return st;
 }
-function selectRun(v){ selectedRun = v; lastRaw = null; history.replaceState(null, '', (v ? '?run='+encodeURIComponent(v) : location.pathname) + (DEMO ? (v ? '&' : '?') + 'demo=1' : '')); tick(); }
+let SHOW_ALL = false;
+function selectRun(v){ if (v === '__more__') { SHOW_ALL = true; lastRaw = null; tick(); return; } selectedRun = v; lastRaw = null; history.replaceState(null, '', (v ? '?run='+encodeURIComponent(v) : location.pathname) + (DEMO ? (v ? '&' : '?') + 'demo=1' : '')); tick(); }
 function taskMark(s){ return s==='running' ? '🟢' : s==='completed' ? '✅' : s==='pending' ? '⏳' : '🔴'; }
 function statusLabel(s){ return s==='interrupted' ? '中断' : s; }
 function runLabel(r){ const mark = r.status==='running' ? '🟢 ' : (r.status==='completed' ? '✅ ' : (r.status==='interrupted' ? '🟠 中断 ' : '🔴 ' + r.status + ' ')); return mark + (r.label || r.slug.replace(/^\d{8}-\d{6}-/,'')) + '  (' + jst(r.updatedAt) + ' ' + r.step + ')'; }
 async function tick(){
-  const raw = await (await fetch('/api/state' + (selectedRun ? '?run='+encodeURIComponent(selectedRun) : ''))).text();
+  const raw = await (await fetch('/api/state?' + (selectedRun ? 'run='+encodeURIComponent(selectedRun) : '') + (SHOW_ALL ? '&all=1' : ''))).text();
   if (raw === lastRaw) {
     const el = document.getElementById('elapsed');
     if (el && lastMeta && lastMeta.status === 'running') el.textContent = fmt(Date.now() - new Date(lastMeta.startTime).getTime());
@@ -816,7 +822,9 @@ async function tick(){
   lastMeta = a ? a.meta : null;
   const sel = document.getElementById('runsel');
   const cur = a ? a.runDir : '';
-  sel.innerHTML = (st.runs||[]).map(r => '<option value="'+esc(r.runDir)+'"'+(r.runDir===cur?' selected':'')+'>'+esc(runLabel(r))+'</option>').join('');
+  // 一覧は新しい 20 件。残りがあるときは末尾に「もっと見る」を置き、選ぶと全件に切り替える
+  const more = (!SHOW_ALL && st.runsTotal > (st.runs||[]).length) ? '<option value="__more__">… もっと見る（残り '+(st.runsTotal - st.runs.length)+' 件）</option>' : '';
+  sel.innerHTML = (st.runs||[]).map(r => '<option value="'+esc(r.runDir)+'"'+(r.runDir===cur?' selected':'')+'>'+esc(runLabel(r))+'</option>').join('') + more;
   if (!selectedRun && cur) selectedRun = cur; // 自動選択を固定（他の run が更新されても切り替わらない）
   // 再描画前にスクロール位置を保存（末尾に張り付いていたら再描画後も末尾へ）
   const keep = {};
@@ -887,7 +895,7 @@ createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/api/state') {
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(state(url.searchParams.get('run') || null)));
+    res.end(JSON.stringify(state(url.searchParams.get('run') || null, url.searchParams.get('all') === '1')));
     return;
   }
   if (url.pathname === '/takt-logo.svg') {
