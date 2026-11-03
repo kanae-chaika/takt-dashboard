@@ -20,8 +20,13 @@ const args = process.argv.slice(2);
 //   takt-logo.svg      ヘッダーのロゴを差し替えたいとき（任意。通常は takt 本体同梱のロゴを使う）
 const CFG_DIR = path.join(HOME, '.config', 'takt-dashboard');
 const expandHome = (p) => path.resolve(p.replace(/^~(?=\/|$)/, HOME));
-// 表示用に HOME を ~ に縮める。HOME + 区切り文字で判定し、HOME と先頭だけ同じ別ディレクトリ（/Users/foo に対する /Users/foobar）は縮めない
-const tildify = (p) => p === HOME ? '~' : p.startsWith(HOME + path.sep) ? '~' + p.slice(HOME.length) : p;
+// 表示用に HOME を ~ に縮める。文字列の前方一致ではなく path.relative で判定する（HOME と先頭だけ同じ別ディレクトリ（/Users/foo に対する /Users/foobar）を縮めないため、
+// また os.homedir() は環境変数 HOME をそのまま返すので、末尾に / が付いた HOME や / の HOME でも HOME 配下を縮めるため）
+const tildify = (p) => {
+  const rel = path.relative(HOME, p);
+  if (!rel) return '~';
+  return rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel) ? p : path.join('~', rel);
+};
 // config.yaml は roots（リスト or , 区切り）と port だけの簡単な形式。yaml ライブラリ無しで読む
 function loadConfig() {
   const cfg = { roots: [], port: null };

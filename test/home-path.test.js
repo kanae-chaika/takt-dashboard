@@ -87,3 +87,14 @@ test('リポジトリ名（repo）は短縮の影響を受けず、tasks.yaml �
   assert.equal((await getState(RUNS.inHome)).repo, 'repo');
   assert.equal((await getState(RUNS.atHome)).repo, path.basename(HOME));
 });
+
+test('HOME の末尾に区切り文字が付いていても（os.homedir() は環境変数 HOME をそのまま返す）、HOME 配下は ~ に縮める', async () => {
+  const slashed = await startDashboard({ cwd: CWD, home: HOME + path.sep });
+  try {
+    const st = await (await fetch(slashed.base + '/api/state?run=' + encodeURIComponent(RUNS.inHome))).json();
+    assert.equal(st.active.runDir, RUNS.inHome, '指定した run を開いている（前提）');
+    assert.equal(st.tasksPath, '~' + path.sep + path.join('repo', '.takt', 'tasks.yaml'));
+    const out = await (await fetch(slashed.base + '/api/state?run=' + encodeURIComponent(RUNS.prefixOnly))).json();
+    assert.equal(out.tasksPath, path.join(PREFIX_ONLY, '.takt', 'tasks.yaml'), '先頭だけ一致する別ディレクトリは縮めない');
+  } finally { await stopDashboard(slashed); }
+});
