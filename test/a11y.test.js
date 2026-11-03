@@ -645,6 +645,7 @@ function stubState(page, respond) {
 const STATE_FAILURES = {
   '通信の失敗（fetch が reject）': () => Promise.reject(new TypeError('Failed to fetch')),
   'サーバーが 500 を返す': () => Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve('internal error') }),
+  '200 だが本文が JSON にならない': () => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('<html>proxy error</html>') }),
 };
 
 test('状態の取得に失敗すると、#upd にエラー（.err）が出て、最後に表示できていたタイムラインは残る', async (t) => {
@@ -717,6 +718,36 @@ test('run を選び直した後に、選び直す前の取得の失敗が遅れ�
   await oldTick;
   assert.ok(!upd(page).includes(STATE_ERR), upd(page));
   assert.ok(upd(page).includes('最終更新'), upd(page));
+});
+
+test('同じ run の取得が重なり、後から始めた取得が先に成功したら、先に始めた取得の失敗が遅れて届いても #upd にエラーを出さない', async () => {
+  const page = await renderedPage();
+  // 1 回目の取得だけ止めておき、2 回目（後から始めた取得）が成功した後に失敗させる
+  let rejectOld; const held = new Promise((_, rej) => { rejectOld = rej; });
+  let calls = 0;
+  const realFetch = page.ctx.fetch;
+  page.ctx.fetch = (u) => !u.startsWith('/api/state') ? realFetch(u) : ++calls === 1 ? held : realFetch(u);
+  const oldTick = page.ctx.tick();
+  await page.ctx.tick();
+  assert.ok(upd(page).includes('最終更新'), '後から始めた取得の成功（前提）');
+  rejectOld(new TypeError('Failed to fetch'));
+  await oldTick;
+  assert.ok(!upd(page).includes(STATE_ERR), upd(page));
+  assert.ok(upd(page).includes('最終更新'), upd(page));
+});
+
+test('先に始めた取得が成功した後に、後から始めた取得が失敗したら、#upd にエラーを出す', async () => {
+  const page = await renderedPage();
+  let rejectNew; const held = new Promise((_, rej) => { rejectNew = rej; });
+  let calls = 0;
+  const realFetch = page.ctx.fetch;
+  page.ctx.fetch = (u) => !u.startsWith('/api/state') ? realFetch(u) : ++calls === 2 ? held : realFetch(u);
+  const first = page.ctx.tick();
+  const second = page.ctx.tick();
+  await first;
+  rejectNew(new TypeError('Failed to fetch'));
+  await second;
+  assert.ok(upd(page).includes(STATE_ERR), upd(page));
 });
 
 // ---------- 指摘 15: レポートの取得失敗 ----------
