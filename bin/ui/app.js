@@ -89,8 +89,9 @@ function pathHtml(nodes){
 function drawEdges(){
   const lane = document.querySelector('#path .lane'); if (!lane) return;
   // 横スクロールが出るときだけ下に余白を足す。macOS などのオーバーレイのスクロールバーは枠の内側の下端に重なって描かれるので、
-  // 余白が無いと並列の枠の点線（一番下に来る要素）がバーに隠れる。スクロールしないときは足さず、見た目を変えない
-  const path = lane.parentElement; path.style.paddingBottom = path.scrollWidth > path.clientWidth ? '12px' : '';
+  // 余白が無いと並列の枠の点線（一番下に来る要素）がバーに隠れる。スクロールしないときは足さず、見た目を変えない。
+  // 従来型のバー（Windows / Linux。offsetHeight と clientHeight の差がバーの太さ）は自分の場所を取って点線に重ならないので、そこでも足さない
+  const path = lane.parentElement; path.style.paddingBottom = path.scrollWidth > path.clientWidth && path.offsetHeight === path.clientHeight ? '12px' : '';
   const svg = lane.querySelector('svg.edges'); const L = lane.getBoundingClientRect();
   svg.setAttribute('width', lane.scrollWidth); svg.setAttribute('height', lane.scrollHeight);
   const pt = (el, side) => { const r = el.querySelector('.port.'+side).getBoundingClientRect(); return [r.left + r.width/2 - L.left, r.top + r.height/2 - L.top]; };
