@@ -592,6 +592,15 @@ test('run が完了してタスク欄に同じ判定が増えても、フォー�
   assertSameElement(d.activeElement, d.querySelector('#tl .judge[data-ji]'), '再描画後のフォーカス');
 });
 
+test('run の一覧のラベルから slug の日時プレフィックス（YYYYMMDD-HHMMSS-）が取れている', async () => {
+  // テンプレートリテラルの中にあった頃は \\d が d になっていて、数字に一致していなかった
+  const page = await renderedPage();
+  // value 属性（run のパス）には slug がそのまま入るので、表示文字だけを見る
+  const label = page.document.getElementById('runsel').innerHTML.match(/>([^<]*)<\/option>/)[1];
+  assert.ok(label.includes('a11y'), label);
+  assert.ok(!label.includes('20261029-100000-'), label);
+});
+
 test('レポートの取得を待つ間に別の判定を開いたら、遅れて届いたレポートで中身を上書きせず、閉じると判定を開いた要素に戻る', async () => {
   const page = await renderedPage();
   const d = page.document;

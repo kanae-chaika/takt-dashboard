@@ -228,7 +228,7 @@ function selectRun(v){
   if (v) isRunMissing = false;
   selectedRun = v; lastRaw = null; history.replaceState(null, '', (v ? '?run='+encodeURIComponent(v) : location.pathname) + (DEMO ? (v ? '&' : '?') + 'demo=1' : '')); tick(); }
 function statusLabel(s){ return s==='interrupted' ? '中断' : s; }
-function runLabel(r){ const mark = r.status==='running' ? '🟢 ' : (r.status==='completed' ? '✅ ' : (r.status==='interrupted' ? '🟠 中断 ' : '🔴 ' + r.status + ' ')); return mark + (r.label || r.slug.replace(/^d{8}-d{6}-/,'')) + '  (' + jst(r.updatedAt) + ' ' + r.step + ')'; }
+function runLabel(r){ const mark = r.status==='running' ? '🟢 ' : (r.status==='completed' ? '✅ ' : (r.status==='interrupted' ? '🟠 中断 ' : '🔴 ' + r.status + ' ')); return mark + (r.label || r.slug.replace(/^\d{8}-\d{6}-/,'')) + '  (' + jst(r.updatedAt) + ' ' + r.step + ')'; }
 // 状態を取得できなかったことを #upd に出す。#app は消さず、最後に表示できていた画面を残す。
 // lastRaw を捨てるのは、復旧後の応答が失敗前と同じでも描き直して、このエラー表示を消すため
 function showStateError(){ lastRaw = null; document.getElementById('upd').innerHTML = '<span class="err">サーバーから取得できません</span>'; }
