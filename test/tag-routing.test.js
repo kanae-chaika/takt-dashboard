@@ -72,6 +72,11 @@ steps:
           name: desc-first-review
           tags:
             - review
+        -   name: wide-dash-review # - の後の空白が複数（キーの位置がずれる）
+            tags: [review]
+        - name: multiline-flow-review
+          tags: [nosuch,
+                 coding] # 複数行にまたがるフロー形式
     rules:
       - condition: all("approved")
         next: fix
@@ -131,7 +136,7 @@ function writeRun(slug, { workflow, parentWorkflow = workflow, parentStep = 'rev
 
 // run の定義。before() で writeRun に渡して作る
 const RUN_DEFS = {
-  tag: ['20261101-100000-tag', { workflow: 'tagwf', subs: [['arch-review', 'tagwf'], ['flow-review', undefined], ['pinned-review', 'tagwf'], ['untagged-review', 'tagwf'], ['unknown-tag-review', 'tagwf'], ['multi-review', 'tagwf'], ['late-name-review', 'tagwf'], ['desc-first-review', 'tagwf']] }],
+  tag: ['20261101-100000-tag', { workflow: 'tagwf', subs: [['arch-review', 'tagwf'], ['flow-review', undefined], ['pinned-review', 'tagwf'], ['untagged-review', 'tagwf'], ['unknown-tag-review', 'tagwf'], ['multi-review', 'tagwf'], ['late-name-review', 'tagwf'], ['desc-first-review', 'tagwf'], ['wide-dash-review', 'tagwf'], ['multiline-flow-review', 'tagwf']] }],
   // reviewers 自身を並列の子の行として出すため、親の step_start は別の名前にする
   parent: ['20261101-100600-parent', { workflow: 'tagwf', parentStep: 'outer', subs: [['reviewers', 'tagwf']] }],
   // 子のワークフロー（e.workflow）が run のワークフロー（meta.workflow）と違う run。子の行は e.workflow の yaml から引く
@@ -211,6 +216,14 @@ test('step の tag のうち targets.tags に無いものは飛ばし、ある�
 test('step の name: が最初のキーでなくても（tags: や description: が先でも）step と認識し、tag の profile を使う', async () => {
   assert.deepEqual(await subPm(RUN_TAG, 'late-name-review'), { provider: 'opencode', model: 'big', source: 'runtime.yaml' });
   assert.deepEqual(await subPm(RUN_TAG, 'desc-first-review'), { provider: 'codex', model: 'gpt-5', source: 'runtime.yaml' });
+});
+
+test('- の後の空白が複数ある要素（-   name:）も、キーの実際の位置で step と認識する', async () => {
+  assert.deepEqual(await subPm(RUN_TAG, 'wide-dash-review'), { provider: 'codex', model: 'gpt-5', source: 'runtime.yaml' });
+});
+
+test('複数行にまたがるフロー形式の tags: [a,\\n b] は閉じ括弧まで読む', async () => {
+  assert.deepEqual(await subPm(RUN_TAG, 'multiline-flow-review'), { provider: 'opencode', model: 'big', source: 'runtime.yaml' });
 });
 
 test('routing の控えは一時ファイルに書いてから置き換える（.tmp が残らず、控えは JSON として読めて stepTags を含む）', async () => {
