@@ -43,8 +43,23 @@ function openJudge(r){
 // ---------- タイムラインの高さ（下端のバーをドラッグ。localStorage に保存） ----------
 // 上段（実行中のタスク + タイムライン）は一体で、下のバーをドラッグすると両方の高さが変わる。経路はそれに合わせて上下する
 let TL_H = 460; try { TL_H = Number(localStorage.getItem('tlH')) || 460; } catch {}
-function applyRowH(){ for (const el of document.querySelectorAll('section.toprow')) el.style.height = TL_H + 'px'; const tl = document.getElementById('tl'); if (tl) tl.style.height = (TL_H - 62) + 'px'; }
-document.addEventListener('dblclick', (e) => { if (e.target.id === 'tlrz') { TL_H = 460; applyRowH(); try { localStorage.removeItem('tlH'); } catch {} drawEdges(); } }); // ダブルクリックで既定の高さに戻す
+function applyRowH(){
+  for (const el of document.querySelectorAll('section.toprow')) el.style.height = TL_H + 'px'; const tl = document.getElementById('tl'); if (tl) tl.style.height = (TL_H - 62) + 'px';
+  const rz = document.getElementById('tlrz'); if (rz) { rz.setAttribute('aria-valuenow', String(TL_H)); rz.setAttribute('aria-valuetext', TL_H + 'px'); } // 読み上げに今の高さを伝える
+}
+function resetRowH(){ TL_H = 460; applyRowH(); try { localStorage.removeItem('tlH'); } catch {} drawEdges(); }
+document.addEventListener('dblclick', (e) => { if (e.target.id === 'tlrz') resetRowH(); }); // ダブルクリックで既定の高さに戻す
+// マウスを使えない人もバーで高さを変えられるようにする: ↓ / ↑ で 20px ずつ（下限はドラッグと同じ 180）、Enter で既定に戻す（ダブルクリックと同じ）。
+// 矢印キーの既定動作（ページのスクロール）は止める。バー自身がフォーカスされているときだけ反応する
+document.addEventListener('keydown', (e) => {
+  if (e.target.id !== 'tlrz') return;
+  if (e.key === 'Enter') { e.preventDefault(); resetRowH(); return; }
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  e.preventDefault();
+  TL_H = Math.max(180, TL_H + (e.key === 'ArrowDown' ? 20 : -20)); applyRowH();
+  try { localStorage.setItem('tlH', String(TL_H)); } catch {}
+  drawEdges();
+});
 document.addEventListener('mousedown', (e) => {
   if (!(e.target.id === 'tlrz')) return;
   e.preventDefault();
@@ -150,7 +165,7 @@ function rowHtml(r, i){
 async function openReport(rel){
   const gen = viewerGen;
   let r = null; // 取得できなければ null（サーバー停止・ネットワーク断）
-  try { const res = await fetch('/api/report?p='+encodeURIComponent(rel)+(selectedRun ? '&run='+encodeURIComponent(selectedRun) : '')); r = { ok: res.ok, status: res.status, text: await res.text() }; } catch {}
+  try { const res = await fetch('/api/report?p='+encodeURIComponent(rel)+(shownRun ? '&run='+encodeURIComponent(shownRun) : '')); r = { ok: res.ok, status: res.status, text: await res.text() }; } catch {}
   if (gen !== viewerGen) return; // 取得を待つ間に別のレポート・判定を開いていたら、古い応答で中身と開いた要素を上書きしない
   // サーバーはレポート・run が無いと 404（本文 not found）、処理の失敗で 500（本文 internal error）を返す。その本文をレポートとして見せない
   const t = !r ? 'レポートを取得できません' : r.status === 404 ? 'レポートが見つかりません' : !r.ok ? 'レポートを取得できません' : r.text;
@@ -158,15 +173,15 @@ async function openReport(rel){
   const body = document.getElementById('vbody'); body.textContent = t; body.scrollTop = 0; body.style.fontSize = '';
   showViewer();
 }
-// #app の中でフォーカスできる要素（開く要素）の種類と、それを見分ける data 属性
-const FOCUS_KINDS = [['button.rep', 'data-rel'], ['button.judge', 'data-ji'], ['button.judge', 'data-ei'], ['.node.has-j', 'data-ji']];
+// #app の中でフォーカスできる要素（開く要素と、上段の高さを変えるバー）の種類と、それを見分ける属性
+const FOCUS_KINDS = [['button.rep', 'data-rel'], ['button.judge', 'data-ji'], ['button.judge', 'data-ei'], ['.node.has-j', 'data-ji'], ['#tlrz', 'id']];
 // data-ji / data-ei は TL の添字。再描画で前に行が入る（並列の子のフェーズ行は子の直後にまとめる等）と添字がずれるので、行そのものを表す値で見分ける
 function focusKey(el, attr){
-  const v = el.getAttribute(attr); if (attr === 'data-rel') return v;
+  const v = el.getAttribute(attr); if (attr !== 'data-ji' && attr !== 'data-ei') return v; // data-rel・id は値そのもので見分けられる
   const r = TL[Number(v)]; return r ? [r.kind, r.key ?? r.step, r.phase ?? '', r.ts ?? ''].join('|') : null;
 }
 // 2 秒ごとの再描画で #app が作り直されると元の要素は DOM から外れるので、種類・行・表示箇所・「その中の何番目か」を覚えて探し直す
-// （同じ判定がタスク欄・タイムライン・経路に出るので、種類・表示箇所・番目で見分ける）。TL を描き直す前に呼ぶこと。開く要素でなければ null
+// （同じ判定がタスク欄・タイムライン・経路に出るので、種類・表示箇所・番目で見分ける）。TL を描き直す前に呼ぶこと。FOCUS_KINDS の要素でなければ null
 function locate(el){
   for (const [sel, attr] of FOCUS_KINDS) {
     const full = sel + '[' + attr + ']';
@@ -201,6 +216,9 @@ viewerEl.addEventListener('mousedown', e => { viewerDown = e.target; });
 viewerEl.addEventListener('click', e => { if (e.target === viewerEl && viewerDown === viewerEl) closeViewer(); });
 let lastRaw = null, lastMeta = null, MAX = null;
 let selectedRun = new URLSearchParams(location.search).get('run') || '';
+// いま #app に描いている run。selectRun は描き直す前に selectedRun を変え、取得に失敗すると前の画面が残るので、
+// 画面のボタンから開くレポートは selectedRun ではなくこちらの run から取る（押したボタンと別の run のレポートを出さないように）
+let shownRun = '';
 // ?run= の run が見つからなかったとき true。最新の run に戻した後も、ユーザーが run を選び直すまで #upd に出し続ける
 let isRunMissing = false;
 // ?demo=1: スクリーンショット用。タスク名・リポジトリ名・ブランチ・Issue 番号を仮の値にし、エージェント出力とキューは出さない
@@ -273,7 +291,7 @@ async function tick(){
   const fa = document.activeElement; const focusInApp = fa && document.getElementById('app').contains(fa) ? locate(fa) : null;
   const notFoundMsg = isRunMissing ? '<span class="err">指定した run が見つかりません</span> ' : '';
   // run が無いときも #upd を書き直す（isRunMissing でなくても。取得失敗のエラー表示を残さないため）
-  if (!a) { document.getElementById('upd').innerHTML = notFoundMsg; document.getElementById('app').innerHTML = '<section class="wide">takt の run が見つかりません</section>'; return; }
+  if (!a) { document.getElementById('upd').innerHTML = notFoundMsg; document.getElementById('app').innerHTML = '<section class="wide">takt の run が見つかりません</section>'; shownRun = ''; return; }
   const m = a.meta;
   MAX = a.maxSteps ?? null;
   document.getElementById('upd').innerHTML = notFoundMsg + esc('最終更新 ' + jst(m.updatedAt));
@@ -308,7 +326,7 @@ async function tick(){
     </section>
 
     <section class="wide pathsec">
-      <div class="rz" id="tlrz" title="ドラッグで上段（タスク・タイムライン）の高さを変更。ダブルクリックで既定に戻す"></div>
+      <div class="rz" id="tlrz" tabindex="0" role="separator" aria-orientation="horizontal" aria-label="上段（タスク・タイムライン）の高さ" aria-valuemin="180" aria-valuenow="${TL_H}" aria-valuetext="${TL_H}px" title="ドラッグか ↓ / ↑ キーで上段（タスク・タイムライン）の高さを変更。ダブルクリックか Enter で既定に戻す"></div>
       <h2>実行経路</h2>
       <div id="path" class="scroll path">${pathHtml(pathModel(tl, m))}</div>
     </section>
@@ -321,6 +339,7 @@ async function tick(){
       <h2>タスクキュー${st.tasksPath ? ' — '+esc(st.tasksPath) : ''}</h2>
       <pre id="tasks" class="scroll" style="max-height:none">${esc(st.currentTask ? st.currentTask.raw : '(この run に対応するキューはありません)')}</pre>
     </section>`}`;
+  shownRun = cur;
   restoreScroll(keep, winY);
   drawEdges();
   if (focusInApp) { const el = relocate(focusInApp); if (el) el.focus({ preventScroll: true }); } // スクロール位置は restoreScroll で戻したので動かさない
