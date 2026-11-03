@@ -75,14 +75,14 @@ function cardHtml(n, big, edge=''){ // edge: 経路の端の印（' first' / ' l
   const jc = n.label ? (/^approve/i.test(n.label) ? ' j-approved' : /^(reject|needs_fix)/i.test(n.label) ? ' j-rejected' : '') : '';
   const label = n.label ? '<span class="jl'+jc+'" title="'+escA(n.label)+'">'+esc(n.label)+'</span>' : (n.reason ? '<span class="jl">'+esc(n.reason)+'</span>' : '<span class="muted">'+esc(n.status ?? (n.cls==='run'?'実行中':''))+'</span>');
   return '<div class="node st-'+n.cls+edge+j+'"'+t+'><span class="port prev"></span><span class="port next"></span>'
-    + '<div class="nm">'+esc(n.name)+(big && n.workflow && n.workflow!=='default' ? ' <span class="wf">['+esc(n.workflow)+']</span>' : '')+(big && n.iter ? ' <span class="wf">· '+n.iter+'/'+(MAX ?? '?')+'</span>' : '')+'</div>'
+    + '<div class="nm">'+esc(n.name)+(big && n.workflow && n.workflow!=='default' ? ' <span class="wf">['+esc(n.workflow)+']</span>' : '')+(big && n.iter ? ' <span class="wf">· '+esc(n.iter)+'/'+(MAX ?? '?')+'</span>' : '')+'</div>'
     + '<div class="sv"><span class="dot"></span>'+label+'</div>'
     + (n.pm ? '<div class="pmv">'+pm(n.pm)+'</div>' : '') + '</div>';
 }
 function pathHtml(nodes){
   const edgeOf = (i) => (i===0 ? ' first' : '') + (i===nodes.length-1 ? ' last' : '');
   return '<div class="lane">' + nodes.map((n, i) => n.kind==='parallel'
-    ? '<div class="group st-'+n.cls+edgeOf(i)+'"><span class="gl">parallel · '+esc(n.name)+(n.iter ? ' · '+n.iter+'/'+(MAX ?? '?') : '')+(n.status && n.status!=='done' ? ' · <span class="jl">'+esc(n.status==='rate_limited' ? 'rate_limited → リトライ' : n.status)+'</span>' : '')+'</span>'+n.children.map((c) => cardHtml(c, false)).join('')+'</div>'
+    ? '<div class="group st-'+n.cls+edgeOf(i)+'"><span class="gl">parallel · '+esc(n.name)+(n.iter ? ' · '+esc(n.iter)+'/'+(MAX ?? '?') : '')+(n.status && n.status!=='done' ? ' · <span class="jl">'+esc(n.status==='rate_limited' ? 'rate_limited → リトライ' : n.status)+'</span>' : '')+'</span>'+n.children.map((c) => cardHtml(c, false)).join('')+'</div>'
     : cardHtml(n, true, edgeOf(i))).join('') + '<svg class="edges"></svg></div>';
 }
 // ポート同士を線で結ぶ。並列の枠は「前の箱 → 各子」「各子 → 次の箱」に扇状に広げる（公式の実行経路と同じ）
@@ -125,7 +125,7 @@ function openError(r){
   showViewer();
 }
 function rowHtml(r, i){
-  if (r.kind==='step') return '<tr'+(i===LATEST?' class="latest"':'')+'><td class="ts">'+jst(r.ts)+'</td><td class="step">▶ '+esc(r.step)+(r.workflow&&r.workflow!=='default'?' <span class="muted">['+esc(r.workflow)+']</span>':'')+' <span class="muted">· '+r.iteration+'/'+(MAX ?? '?')+'</span></td><td class="pm">'+pm(r)+'</td><td class="reps" colspan="2">'+repLinks(r)+'</td></tr>';
+  if (r.kind==='step') return '<tr'+(i===LATEST?' class="latest"':'')+'><td class="ts">'+jst(r.ts)+'</td><td class="step">▶ '+esc(r.step)+(r.workflow&&r.workflow!=='default'?' <span class="muted">['+esc(r.workflow)+']</span>':'')+' <span class="muted">· '+esc(r.iteration)+'/'+(MAX ?? '?')+'</span></td><td class="pm">'+pm(r)+'</td><td class="reps" colspan="2">'+repLinks(r)+'</td></tr>';
   if (r.kind==='sub')  return '<tr'+(i===LATEST?' class="latest"':'')+'><td class="ts">'+jst(r.ts)+'</td><td class="sub">├▶ '+esc(r.step)+'</td><td class="pm">'+pm(r)+'</td><td class="reps" colspan="2">'+repLinks(r)+'</td></tr>';
   if (r.kind==='phase') {
     // エラーは本文を長々と出さず、「エラー」リンク + 先頭 80 文字。全文はクリックでモーダル
@@ -293,9 +293,9 @@ async function tick(){
       <div class="row"><span class="k">リポジトリ</span><span>${esc(st.repo)}</span></div>
       ${st.currentTask && st.currentTask.issue ? '<div class="row"><span class="k">Issue</span><span>#'+esc(String(st.currentTask.issue))+'</span></div>' : ''}
       ${st.currentTask && st.currentTask.branch ? '<div class="row"><span class="k">ブランチ</span><span>'+esc(st.currentTask.branch)+'</span></div>' : ''}
-      <div style="margin:8px 0"><span class="badge b-${esc(m.status)}">${esc(statusLabel(m.status))}</span>${finalIdx >= 0 ? ' '+judgeLink(tl[finalIdx], finalIdx) : ''}</div>
+      <div style="margin:8px 0"><span class="badge b-${escA(m.status)}">${esc(statusLabel(m.status))}</span>${finalIdx >= 0 ? ' '+judgeLink(tl[finalIdx], finalIdx) : ''}</div>
       <div class="row"><span class="k">ワークフロー</span><span>${esc(m.workflow)}</span></div>
-      <div class="row"><span class="k">イテレーション</span><span>${m.currentIteration} / ${MAX ?? '?'}</span></div>
+      <div class="row"><span class="k">イテレーション</span><span>${esc(m.currentIteration)} / ${MAX ?? '?'}</span></div>
       <div class="bar"><div style="width:${pct}%"></div></div>
       <div class="row" style="margin-top:8px"><span class="k">経過時間</span><span id="elapsed">${fmt(end - new Date(m.startTime).getTime())}</span></div>
       ${(m.resume_point?.stack ?? []).length > 1 ? '<div class="stack">'+stack+'</div>' : ''}
