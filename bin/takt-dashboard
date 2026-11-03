@@ -715,8 +715,9 @@ createServer({ requireHostHeader: false }, (req, res) => {
       const pkg = taktPackageDir();
       const logo = [path.join(CFG_DIR, 'takt-logo.svg'), ...(pkg ? [path.join(pkg, 'docs', 'assets', 'takt-logo-dark.svg')] : [])].find((p) => existsSync(p));
       if (!logo) { res.writeHead(404); res.end(); return; }
+      const svg = readFileSync(logo); // 例外時に 500 を返せるよう、本文を作ってからヘッダーを書く
       res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'max-age=86400' });
-      res.end(readFileSync(logo));
+      res.end(svg);
       return;
     }
     if (url.pathname === '/api/report') {
@@ -725,8 +726,9 @@ createServer({ requireHostHeader: false }, (req, res) => {
       res.end(t ?? 'not found');
       return;
     }
+    const html = pageHtml(); // 例外時に 500 を返せるよう、本文を作ってからヘッダーを書く（bin/ui/ の読み込み失敗・index.html のタグ欠け）
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); // 再起動後に古いページが使われないように
-    res.end(pageHtml());
+    res.end(html);
   } catch (e) {
     // ハンドラ内の例外でプロセスを落とさない。ヘッダー送出後なら接続を切る
     console.error('takt-dashboard: ' + req.url + ' の処理に失敗: ' + (e?.stack ?? e));
