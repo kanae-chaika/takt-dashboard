@@ -21,12 +21,28 @@ const args = process.argv.slice(2);
 const CFG_DIR = path.join(HOME, '.config', 'takt-dashboard');
 const expandHome = (p) => path.resolve(p.replace(/^~(?=\/|$)/, HOME));
 // config.yaml は roots（リスト or , 区切り）と port だけの簡単な形式。yaml ライブラリ無しで読む
+// yaml の行末コメントを外す（config.yaml / runtime.yaml / workflow yaml の自前パースで共通）。
+// YAML の # は行頭か空白の後にあるものだけがコメントで、引用符の中の #（例: "review#critical"）や空白を挟まない #（例: a#b）は値の一部。
+// 引用符は値の先頭（行頭・空白・[ { , : - の後）で始まるものだけを見る
+function stripYamlComment(l) {
+  let q = null;
+  for (let i = 0; i < l.length; i++) {
+    const c = l[i];
+    if (q) {
+      if (q === '"' && c === '\\') i++; // "…\"…" のエスケープ
+      else if (q === "'" && c === "'" && l[i + 1] === "'") i++; // '…''…' は ' のエスケープ
+      else if (c === q) q = null;
+    } else if ((c === '"' || c === "'") && /(^|[\s[{,:-])$/.test(l.slice(0, i))) q = c;
+    else if (c === '#' && (i === 0 || /\s/.test(l[i - 1]))) return l.slice(0, i);
+  }
+  return l;
+}
 function loadConfig() {
   const cfg = { roots: [], port: null };
   let text = ''; try { text = readFileSync(path.join(CFG_DIR, 'config.yaml'), 'utf8'); } catch { return cfg; }
   let inRoots = false;
   for (const raw of text.split('\n')) {
-    const line = raw.replace(/#.*$/, '').trimEnd();
+    const line = stripYamlComment(raw).trimEnd();
     if (!line.trim()) continue;
     let m;
     if ((m = line.match(/^port:\s*(\d+)/))) { cfg.port = Number(m[1]); inRoots = false; continue; }
@@ -137,7 +153,7 @@ function loadRuntimeRouting(p = path.join(HOME, '.takt', 'runtime.yaml')) {
   const profiles = {}; const stepsRaw = {}; const tagsRaw = {}; let defProfile = null;
   let sect = null; let sub = null;
   for (const raw of text.split('\n')) {
-    const line = raw.replace(/#.*$/, '');
+    const line = stripYamlComment(raw);
     if (!line.trim()) continue;
     if (/^  defaults:/.test(line)) { sect = 'defaults'; continue; }
     if (/^  profiles:/.test(line)) { sect = 'profiles'; continue; }
@@ -480,7 +496,7 @@ function maxStepsFor(workflow, root) {
 // tags: の書き方はブロック形式（tags: の次の行から - review）とフロー形式（tags: [review]。閉じ括弧まで複数行に分かれることもある）がある
 function stepTagsIn(text) {
   const out = {};
-  const lines = text.split('\n').map((l) => l.replace(/#.*$/, '').trimEnd());
+  const lines = text.split('\n').map((l) => stripYamlComment(l).trimEnd());
   const start = lines.findIndex((l) => /^steps:/.test(l));
   if (start < 0) return out;
   let end = lines.findIndex((l, i) => i > start && /^\S/.test(l));
