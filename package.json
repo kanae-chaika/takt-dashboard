@@ -6,7 +6,7 @@
   "bin": { "takt-dashboard": "bin/takt-dashboard" },
   "files": ["bin", "README.md", "LICENSE"],
   "scripts": {
-    "test": "node --test test/*.test.js",
+    "test": "node --test",
     "lint": "eslint bin/takt-dashboard bin/ui test eslint.config.js"
   },
   "engines": { "node": ">=20" },

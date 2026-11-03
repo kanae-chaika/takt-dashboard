@@ -57,7 +57,7 @@
 ```bash
 npm link                     # takt-dashboard コマンドが clone 先を指す
 npm install                  # テストと ESLint 用（実行時の依存は無い）
-npm test                     # node --test test/*.test.js
+npm test                     # node --test（引数なし。test/ 配下を既定の探索で実行。glob を書かないのは Windows の npm スクリプトも Node 20 の test runner も展開しないため）
 npm run lint                 # ESLint（検査のみ）
 ```
 
