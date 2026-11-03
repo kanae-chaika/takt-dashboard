@@ -581,8 +581,10 @@ function tasksYamlFor(root) {
 function parseTasks(text) {
   if (!text) return [];
   const items = text.split(/\n(?=  - )/).filter((b) => /^  - /.test(b));
+  // 各タスクの最初のキーは「  - 」の行に書かれる（takt 0.74.0 は yaml の stringify で書き、先頭はそのタスクにある最初のキー。
+  // 実行設定が無ければ name、worktree が無ければ branch や issue になる）。2 つ目以降の 4 スペース字下げの行と同じ扱いで読む
   const field = (block, key) => {
-    const m = block.match(new RegExp('^\\s{4}' + key + ':\\s*(.*)$', 'm'));
+    const m = block.match(new RegExp('^(?:\\s{4}|  - )' + key + ':\\s*(.*)$', 'm'));
     if (!m) return '';
     let v = m[1].trim();
     if (/^".*"$/.test(v)) { try { v = JSON.parse(v); } catch { v = v.slice(1, -1); } }
