@@ -2,10 +2,10 @@
 // 実行: node --test test/takt-dashboard.test.js
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, copyFileSync, cpSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnDashboard, startDashboard as startChild, stopDashboard } from './helpers.js';
+import { BIN, spawnDashboard, startDashboard as startChild, stopDashboard } from './helpers.js';
 
 const STARTUP_TIMEOUT_MS = 5000;
 
@@ -86,6 +86,34 @@ test('起動後に meta.json が消えると /api/state は 500 text/plain を�
   await res.arrayBuffer();
   const next = await fetch(s.base + '/');
   assert.equal(next.status, 200);
+  assert.ok(isAlive(s.proc));
+});
+
+test('bin/ui/ のファイルを読めないと / は 500 text/plain を返し、プロセスは応答を続ける', async (t) => {
+  // Given: bin/takt-dashboard と bin/ui/ を一時ディレクトリへコピーし、コピーから app.css を消して起動したサーバー。
+  // UI_DIR はスクリプトの場所（import.meta.url）基準なので、コピーを起動すればリポジトリの bin/ui/ は書き換えずに済む。
+  // 拡張子の無いスクリプトを ESM として読ませるため、すぐ上に "type": "module" の package.json を置く（リポジトリと同じ構成）
+  const sandbox = makeSandbox(t);
+  const pkgBin = path.join(sandbox, 'pkg', 'bin');
+  mkdirSync(pkgBin, { recursive: true });
+  copyFileSync(BIN, path.join(pkgBin, 'takt-dashboard'));
+  cpSync(path.join(path.dirname(BIN), 'ui'), path.join(pkgBin, 'ui'), { recursive: true });
+  writeFileSync(path.join(sandbox, 'pkg', 'package.json'), JSON.stringify({ type: 'module' }));
+  rmSync(path.join(pkgBin, 'ui', 'app.css'));
+  const runDir = makeRun(path.join(sandbox, '.takt', 'runs', 'run-ui-missing'));
+  const s = await startChild({ cwd: sandbox, home: sandbox, args: [runDir], env: ENV, bin: path.join(pkgBin, 'takt-dashboard') });
+  t.after(() => stopDashboard(s));
+
+  // When: ページを要求する
+  const res = await fetch(s.base + '/');
+
+  // Then: 接続を切らずに 500・text/plain・internal error。続く要求にも応答し、プロセスは終了していない
+  assert.equal(res.status, 500);
+  assert.match(res.headers.get('content-type'), /^text\/plain/);
+  assert.equal(await res.text(), 'internal error');
+  const next = await fetch(s.base + '/api/state');
+  assert.equal(next.status, 200);
+  await next.arrayBuffer();
   assert.ok(isAlive(s.proc));
 });
 
@@ -176,7 +204,7 @@ test('/api/report にファイルを渡すと 200 text/plain でその内容を�
   assert.equal(await res.text(), '# レポート\n本文\n');
 });
 
-test('/ は 200 text/html で no-store を付けて返す', async (t) => {
+test('/ は 200 text/html で no-store を付け、bin/ui の CSS と JS を 1 枚の HTML に埋め込んで返す', async (t) => {
   // Given: 有効な run を開いたサーバー
   const sandbox = makeSandbox(t);
   const runDir = makeRun(path.join(sandbox, '.takt', 'runs', 'run-html'));
@@ -185,9 +213,12 @@ test('/ は 200 text/html で no-store を付けて返す', async (t) => {
   // When: ページを要求する
   const res = await fetch(s.base + '/');
 
-  // Then: 200・text/html・cache-control no-store
+  // Then: 200・text/html・cache-control no-store。CSS / JS は別ファイルへの参照ではなく中身が入っている（ルートは / だけで済ませる）
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type'), /^text\/html/);
   assert.equal(res.headers.get('cache-control'), 'no-store');
-  await res.arrayBuffer();
+  const html = await res.text();
+  assert.doesNotMatch(html, /<link rel="stylesheet"|<script src=/);
+  assert.match(html, /<style>\n[\s\S]+<\/style>/);
+  assert.match(html, /<script>\n[\s\S]*function tick\(\)[\s\S]*<\/script>/);
 });

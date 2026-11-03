@@ -5,8 +5,17 @@
   "type": "module",
   "bin": { "takt-dashboard": "bin/takt-dashboard" },
   "files": ["bin", "README.md", "LICENSE"],
+  "scripts": {
+    "test": "node --test",
+    "lint": "eslint bin/takt-dashboard bin/ui test eslint.config.js"
+  },
   "engines": { "node": ">=20" },
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/kanae-chaika/takt-dashboard" },
-  "keywords": ["takt", "dashboard", "ai-agents", "agent-orchestration"]
+  "keywords": ["takt", "dashboard", "ai-agents", "agent-orchestration"],
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0"
+  }
 }

@@ -7,12 +7,15 @@
 
 | パス | 内容 |
 |---|---|
-| `bin/takt-dashboard` | 本体。サーバー（Node.js）とブラウザ側（`HTML` 定数に埋め込んだ HTML / CSS / JS）が 1 ファイルに入っている。拡張子なし・ESM |
+| `bin/takt-dashboard` | サーバー（Node.js）。拡張子なし・ESM。`/` では `bin/ui/index.html` の `<link>` と `<script src>` を `app.css` / `app.js` の中身に置き換えて 1 枚の HTML にして返す（`pageHtml()`。配信のルートは `/` だけ） |
+| `bin/ui/` | ブラウザ側。`index.html`（骨組み）・`app.css`・`app.js`。リクエストごとに読むので、`npm link` 中はブラウザのリロードで編集が反映される |
 | `test/*.test.js` | `node:test` のテスト。`bin/takt-dashboard` を子プロセスで起動し、HTTP 応答と終了コードで確認する |
 | `docs/` | README 用のスクリーンショットのみ |
 | `.coderabbit.yaml` | CodeRabbit の設定（日本語・assertive・draft PR もレビュー） |
+| `eslint.config.js` | ESLint の設定（検査のみ。サーバー・テストは Node.js の ESM、`bin/ui/app.js` はブラウザのグローバルな script として読む） |
+| `.github/workflows/ci.yml` | CI。push / PR ごとに `npm run lint` と `npm test` を Node 20 / 22 で回す |
 
-`bin/takt-dashboard` の中は `// ---------- 見出し ----------` でセクション分けされている（設定 / run 探索 / 中断判定 / routing / タイムライン / レポート / tasks.yaml / state / HTML / サーバー）。コードを足すときは該当セクションに入れる。
+`bin/takt-dashboard` と `bin/ui/app.js` の中は `// ---------- 見出し ----------` でセクション分けされている（サーバー: 設定 / run 探索 / 中断判定 / routing / タイムライン / レポート / tasks.yaml / state / HTML / サーバー）。コードを足すときは該当セクションに入れる。
 
 ## 前提
 
@@ -35,30 +38,33 @@
 ## 設計方針（変えない）
 
 - **依存ライブラリなし。** Node.js 標準ライブラリだけで動かす（`package.json` に dependencies を足さない）。yaml（`config.yaml` / `runtime.yaml` / `tasks.yaml`）も自前の簡易パースで読む
-- **1 ファイル。** サーバーもブラウザ側のコードも `bin/takt-dashboard` に置く
+- **ビルドしない。** ブラウザ側は `bin/ui/` の素の HTML / CSS / JS をサーバーが読んで返すだけで、バンドラや変換は入れない
 - **読むだけ。** takt 本体の `~/.takt/` には書き込まない。ダッシュボード自身のデータは `~/.config/takt-dashboard/` に置く
 - **ローカル専用。** `127.0.0.1` にだけ bind する。認証はない
 - **run 開始時点の設定を使う。** 並列の子の provider / model は run ごとに `routing/<run slug>.json` に保存し、以後 yaml を変えても過去の表示を変えない
 - **`?run=` で指定した run が無いときに別の run へフォールバックしない。** `runNotFound` を返し、URL と表示を食い違わせない
 - ハンドラ内の例外でプロセスを落とさない（500 を返す）
 
-## 画面（`HTML` 定数）の前提
+## 画面（`bin/ui/`）の前提
 
 - **2 秒ごとに `/api/state` を取り、応答が前回と違えば画面全体を描き直す**（`tick()`）。UI を足すときは、2 秒後の再描画で消えないか・守る仕組みが要るかを考える。選択中の run は `selGen`（選択の世代番号）で古い応答を捨て、スクロール位置は `restoreScroll` で戻している
-- ブラウザ側のコードはテンプレートリテラル内の文字列なので、`${}` は `\${`、正規表現の `\d` などは `\\d` と二重にエスケープする。エスケープ漏れは実行時まで気づけない（`\d` が `d` になる）ので、正規表現を書いたら表示で確認する
-- `<style>` 内の CSS も「既存のスタイルを勝手に変えない」の対象。見た目が変わる変更は、手を動かす前にユーザーに確認する
+- `app.js` は `index.html` の `onclick` から呼ぶ関数があるので、モジュールではなくグローバルな script として読まれる（ESLint の設定もそれに合わせている）
+- `app.css` も「既存のスタイルを勝手に変えない」の対象。見た目が変わる変更は、手を動かす前にユーザーに確認する
 - `?demo=1` を付けると `demoize()` がリポジトリ名・タスク名・ブランチをサンプル値に置き換える。README のスクリーンショットを撮るときはこれを使い、実名を写さない
 
 ## 開発
 
 ```bash
 npm link                     # takt-dashboard コマンドが clone 先を指す
-node --test test/*.test.js
+npm install                  # テストと ESLint 用（実行時の依存は無い）
+npm test                     # node --test（引数なし。test/ 配下を既定の探索で実行。glob を書かないのは Windows の npm スクリプトも Node 20 の test runner も展開しないため）
+npm run lint                 # ESLint（検査のみ）
 ```
 
-- `engines.node >= 20`。`node:test` を使うので別のテストランナーは入れない
-- **CI は無い。push 前にローカルでテストを通す**
-- lint / formatter は無い。シングルクォート・セミコロンあり・1 行に詰める既存の書き方に揃える
+- `engines.node >= 20` は実行時の要件。開発ツールの ESLint 10 は Node.js 20.19 以上 / 22.13 以上 / 24 以上が必要（21・23 は対象外）なので、手元の Node が古いと `npm install` が失敗することがある
+- `node:test` を使うので別のテストランナーは入れない
+- **push 前にローカルで `npm run lint` と `npm test` を通す。** CI（GitHub Actions）でも同じものが回るが、CI 待ちで直すのではなく手元で通してから push する
+- ESLint は検査だけで、formatter は無い。シングルクォート・セミコロンあり・1 行に詰める既存の書き方に揃える。ESLint の指摘を黙らせるルール追加は、既存の書き方を守るために必要な場合だけにする（既存の `allowEmptyCatch` / `no-regex-spaces` / `ignoreRestSiblings` がその例）
 - テストは実環境の `~/.takt` / `~/.config/takt-dashboard` を読まないよう、`HOME` と cwd を一時ディレクトリにして起動する（起動・停止は `test/helpers.js` の `startDashboard` / `stopDashboard` を使う。`--port 0` で起動し、起動メッセージから実際のポートを読む）
 - テストで run を作るときは `<root>/.takt/runs/<slug>/` に `meta.json` を置く（必須はこれだけ）。`logs/*.jsonl`・`reports/*.md` はそのテストで使う場合だけ作る
 

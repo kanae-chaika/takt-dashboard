@@ -592,6 +592,31 @@ test('run が完了してタスク欄に同じ判定が増えても、フォー�
   assertSameElement(d.activeElement, d.querySelector('#tl .judge[data-ji]'), '再描画後のフォーカス');
 });
 
+test('run の一覧のラベルから slug の日時プレフィックス（YYYYMMDD-HHMMSS-）が取れている', async () => {
+  // テンプレートリテラルの中にあった頃は \\d が d になっていて、数字に一致していなかった
+  const page = await renderedPage();
+  // value 属性（run のパス）には slug がそのまま入るので、表示文字だけを見る
+  const label = page.document.getElementById('runsel').innerHTML.match(/>([^<]*)<\/option>/)[1];
+  assert.ok(label.includes('a11y'), label);
+  assert.ok(!label.includes('20261029-100000-'), label);
+});
+
+test('レポートの取得を待つ間に run を選び直したら、遅れて届いたレポートでモーダルを開かない', async () => {
+  const page = await renderedPage();
+  const d = page.document;
+  let release; const held = new Promise((r) => { release = r; });
+  const text = Promise.resolve('切り替え前の run のレポート');
+  const realFetch = page.ctx.fetch;
+  page.ctx.fetch = (u) => u.startsWith('/api/report') ? held.then(() => ({ text: () => text })) : realFetch(u);
+  press(page, d.querySelector('#tl .rep[data-rel="plan.md"]'), 'Enter');
+  page.ctx.selectRun(RUN);
+  await settle(); await settle();
+  release();
+  await held; await text; await settle();
+  assert.equal(page.viewer.open, false, '切り替え前の run のレポートで開かない');
+  page.ctx.fetch = realFetch;
+});
+
 test('レポートの取得を待つ間に別の判定を開いたら、遅れて届いたレポートで中身を上書きせず、閉じると判定を開いた要素に戻る', async () => {
   const page = await renderedPage();
   const d = page.document;
@@ -629,6 +654,23 @@ test('未分類のレポートがログの追加でタイムラインに移っ�
   const moved = d.querySelector('#tl .rep[data-rel="other.md"]');
   assert.ok(moved, 'other.md がタイムラインに移った（前提）');
   assertSameElement(d.activeElement, moved, '再描画後のフォーカス');
+});
+
+test('選択が空のまま始まった 2 件目の取得が、1 件目の自動選択の後に別の run を返しても、表示を上書きしない', async () => {
+  // 別の run（B）の応答を先に用意しておく（loadPage の後に await を挟むと、その間に 1 件目が終わって自動選択が済んでしまう）
+  const stateB = JSON.parse(await (await fetch(server.base + '/api/state')).text());
+  stateB.active.runDir = '/B'; stateB.active.meta = { ...stateB.active.meta, runSlug: '20261029-100000-bbbb' };
+  // 読み込み時の tick（選択は空）が走っている間に 2 件目の tick を始める。2 件目の応答だけ止めておき、B を返す
+  const page = loadPage();
+  let release; const held = new Promise((r) => { release = r; });
+  const realFetch = page.ctx.fetch;
+  page.ctx.fetch = (u) => u.startsWith('/api/state') ? held.then(() => ({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(stateB)) })) : realFetch(u);
+  const second = page.ctx.tick();
+  await waitFor(() => page.document.querySelector('#tl table'), '1 件目の描画');
+  assert.ok(page.document.getElementById('app').innerHTML.includes('a11y'), '1 件目で run A が自動選択されて表示される（前提）');
+  release(); await second; await settle();
+  assert.ok(!page.document.getElementById('app').innerHTML.includes('bbbb'), '選択が空のときに始めた 2 件目の応答（run B）で表示を上書きしない');
+  page.ctx.fetch = realFetch;
 });
 
 // ---------- 指摘 15: 状態の取得失敗 ----------
