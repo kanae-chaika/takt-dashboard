@@ -7,7 +7,7 @@
 // データ元は run ディレクトリの logs/*.jsonl・meta.json・reports/。provider/model が無い並列サブステップは
 // ~/.takt/runtime.yaml（無ければ config.yaml）から引く。
 import { createServer } from 'node:http';
-import { readFileSync, readdirSync, existsSync, statSync, realpathSync, mkdirSync, writeFileSync, writeSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync, realpathSync, mkdirSync, writeFileSync, writeSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -28,12 +28,28 @@ const tildify = (p) => {
   return rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel) ? p : path.join('~', rel);
 };
 // config.yaml は roots（リスト or , 区切り）と port だけの簡単な形式。yaml ライブラリ無しで読む
+// yaml の行末コメントを外す（config.yaml / runtime.yaml / workflow yaml の自前パースで共通）。
+// YAML の # は行頭か空白の後にあるものだけがコメントで、引用符の中の #（例: "review#critical"）や空白を挟まない #（例: a#b）は値の一部。
+// 引用符は値の先頭（行頭、「- 」の後、「キー: 」の後、[ { , の後）にあるものだけが引用の開始。平文の値の途中の引用符（例: /tmp/repo '23）は値の一部
+function stripYamlComment(l) {
+  let q = null;
+  for (let i = 0; i < l.length; i++) {
+    const c = l[i];
+    if (q) {
+      if (q === '"' && c === '\\') i++; // "…\"…" のエスケープ
+      else if (q === "'" && c === "'" && l[i + 1] === "'") i++; // '…''…' は ' のエスケープ
+      else if (c === q) q = null;
+    } else if ((c === '"' || c === "'") && /(^\s*|(^|\s)-\s+|:\s+|[[{,]\s*)$/.test(l.slice(0, i))) q = c;
+    else if (c === '#' && (i === 0 || /\s/.test(l[i - 1]))) return l.slice(0, i);
+  }
+  return l;
+}
 function loadConfig() {
   const cfg = { roots: [], port: null };
   let text = ''; try { text = readFileSync(path.join(CFG_DIR, 'config.yaml'), 'utf8'); } catch { return cfg; }
   let inRoots = false;
   for (const raw of text.split('\n')) {
-    const line = raw.replace(/#.*$/, '').trimEnd();
+    const line = stripYamlComment(raw).trimEnd();
     if (!line.trim()) continue;
     let m;
     if ((m = line.match(/^port:\s*(\d+)/))) { cfg.port = Number(m[1]); inRoots = false; continue; }
@@ -144,7 +160,7 @@ function loadRuntimeRouting(p = path.join(HOME, '.takt', 'runtime.yaml')) {
   const profiles = {}; const stepsRaw = {}; const tagsRaw = {}; let defProfile = null;
   let sect = null; let sub = null;
   for (const raw of text.split('\n')) {
-    const line = raw.replace(/#.*$/, '');
+    const line = stripYamlComment(raw);
     if (!line.trim()) continue;
     if (/^  defaults:/.test(line)) { sect = 'defaults'; continue; }
     if (/^  profiles:/.test(line)) { sect = 'profiles'; continue; }
@@ -206,9 +222,15 @@ function routingHistory() {
   const runtimeSince = Math.max(...cf.map((x) => x.until), 0);
   return { rt, cf, runtimeSince };
 }
+const snapPath = (runDir) => path.join(SNAP_DIR, path.basename(runDir) + '.json');
+// 控えの書き込みはここだけで行う（routingFor の初回保存と stepTagsFor の書き足しで形式を揃える）。書けなくても表示は続ける。
+// 一時ファイルに書いてから rename で置き換える。書き込みの途中で落ちて控えが壊れると、次回は run 開始時の設定を復元できず現在の設定に置き換わってしまうため
+function saveRouting(runDir, routing) {
+  const target = snapPath(runDir), tmp = target + '.' + process.pid + '.tmp';
+  try { mkdirSync(SNAP_DIR, { recursive: true }); writeFileSync(tmp, JSON.stringify(routing, null, 1)); renameSync(tmp, target); } catch {}
+}
 function routingFor(runDir, startTime) {
-  const slug = path.basename(runDir);
-  const snap = path.join(SNAP_DIR, slug + '.json');
+  const snap = snapPath(runDir);
   try { if (existsSync(snap)) return JSON.parse(readFileSync(snap, 'utf8')); } catch {}
   const start = startTime ? new Date(startTime).getTime() : 0;
   let routing = null;
@@ -219,8 +241,23 @@ function routingFor(runDir, startTime) {
     if (cand) { routing = cand.parse(cand.file); if (routing) routing.source = path.basename(cand.file); }
   }
   if (!routing) routing = loadRouting();
-  try { mkdirSync(SNAP_DIR, { recursive: true }); writeFileSync(snap, JSON.stringify({ ...routing, savedAt: new Date().toISOString() }, null, 1)); } catch {}
+  routing.savedAt = new Date().toISOString();
+  saveRouting(runDir, routing);
   return routing;
+}
+// 並列の子の tag（workflow yaml の step の tags:）も run 開始時点のものを使う。yaml を後から変えても過去の表示が変わらないよう、
+// ワークフローごとに初めて読んだ step の tags を控えの stepTags に書き足し、以後はそれを使う。
+// yaml が見つからないときは保存せず null（呼び出し側で既定を使う）
+function stepTagsFor(runDir, routing, workflow, root) {
+  if (!workflow) return null;
+  const saved = routing.stepTags?.[workflow];
+  if (saved) return saved;
+  const text = workflowYamls(workflow, root)[0]; // takt が使うのは最初に見つかったファイル
+  if (text === undefined) return null;
+  const tags = stepTagsIn(text);
+  routing.stepTags = { ...routing.stepTags, [workflow]: tags };
+  saveRouting(runDir, routing);
+  return tags;
 }
 
 // ---------- タイムライン ----------
@@ -237,15 +274,23 @@ function readEvents(runDir) {
   }
   return events;
 }
-function timeline(runDir, routing, meta) {
+// stepTagsOf はワークフロー名から { step 名: [tag, …] }（yaml が無ければ null）を返す関数
+function timeline(runDir, routing, meta, stepTagsOf) {
   const events = readEvents(runDir);
   const started = new Set();
   const rows = [];
   const windows = {}; // step#iter → { start, end }（execute〜judge の時間帯）
   const reportPhases = {}; // step#iter → [{ start, end }]（report フェーズごと）
   let lastOutput = null;
-  const cfgPm = (step) => {
-    const s = routing.steps[step];
+  // 並列の子の provider / model は takt 本体と同じ順で引く: targets.steps → targets.tags → defaults。
+  // takt 0.74.0 の dist/core/workflow/provider-resolution.js で確認: 優先度の表で provider_routing.steps（3）が tags（4）より先。
+  // step の tag が targets.tags に複数あるときは step の tags の並びで後のものが上書きする（resolveTagProviderRoutingEntry）。
+  // ただし runtime.yaml の形式では tagConflictPolicy が fail-fast（dist/infra/config/runtime-provider/environment.js）で、
+  // 割り当てが食い違う tag がある run はそもそも始まらないので、どれを選んでも同じ profile になる
+  const cfgPm = (step, workflow) => {
+    const tags = routing.tags ?? {}; // tags の無い古い控えもある
+    let s = routing.steps[step];
+    if (!s && Object.keys(tags).length) s = (stepTagsOf(workflow)?.[step] ?? []).filter((t) => Object.hasOwn(tags, t)).map((t) => tags[t]).at(-1);
     return s ? { provider: s.provider, model: s.model, source: routing.source }
              : { provider: routing.def.provider, model: routing.def.model, source: routing.source };
   };
@@ -254,7 +299,6 @@ function timeline(runDir, routing, meta) {
   // step#iter → 判定結果。label は judge フェーズの phase_complete.content（一致した rule のラベル。例: approved）、
   // stages は phase_judge_stage.response（structured_output の JSON。reason を含む）
   const judges = {};
-  const lastJudgeKey = {};
   // step#iter → エラーの記録（phase_complete / step_complete の status が done 以外のときの error / content）。失敗行・error 行のクリックで表示する
   const errors = {};
   const noteError = (key, e, ts) => { const t = String(e.error ?? e.content ?? '').trim(); if (!t) return; (errors[key] ?? (errors[key] = [])).push({ ts, phase: e.phaseName ?? (e.type === 'step_complete' ? 'step' : e.type), status: e.status ?? '', text: t }); };
@@ -268,7 +312,6 @@ function timeline(runDir, routing, meta) {
     if (t === 'phase_start' && e.phaseName === 'execute' && st && !started.has(base) && subSeen.has(attempts[base] ? base + '@' + attempts[base] : base)) attempts[base] = (attempts[base] ?? 1) + 1;
     const key = attempts[base] ? base + '@' + attempts[base] : base;
     if (t === 'phase_judge_stage' && st) {
-      lastJudgeKey[st] = key; // step ごとの最新の判定（失敗行に付けるため）
       const j = judges[key] ?? (judges[key] = { label: null, stages: [] });
       j.stages.push({ stage: e.stage ?? null, method: e.method ?? null, status: e.status ?? null, response: String(e.response ?? '') });
     }
@@ -286,7 +329,7 @@ function timeline(runDir, routing, meta) {
         actualPm[st] = { provider: sw[3], model: sw[4], source: 'log' };
         // 切替はリトライの開始と同じ瞬間なので、別の行にせず開始行の provider 欄に「切替前 → 切替後」として載せる。
         // 通常ステップは step_start が先に来ているので直前の開始行に付け、並列の子は開始行がこの後に作られるので pending に置く
-        const startRow = rows.findLast?.((r) => (r.kind === 'step' || r.kind === 'sub') && r.step === st && Math.abs(new Date(ts) - new Date(r.ts)) <= 5000);
+        const startRow = rows.findLast((r) => (r.kind === 'step' || r.kind === 'sub') && r.step === st && Math.abs(new Date(ts) - new Date(r.ts)) <= 5000);
         if (startRow) { startRow.switchFrom = from; startRow.provider = sw[3]; startRow.model = sw[4]; startRow.source = 'log'; }
         else pendingSwitch[st] = { from, to, ts, top: started.has(base) };
       }
@@ -306,7 +349,7 @@ function timeline(runDir, routing, meta) {
       rows.push({ ts, kind: 'step', key, step: st, workflow: e.workflow, iteration: it, provider: e.provider, model: e.model ?? null, source: 'log', reports: [] });
     } else if (t === 'phase_start' && e.phaseName === 'execute' && !started.has(key) && !subSeen.has(key)) {
       subSeen.add(key);
-      const subRow = { ts, kind: 'sub', key, step: st, workflow: e.workflow, iteration: it, ...(actualPm[st] ?? cfgPm(st)), reports: [] };
+      const subRow = { ts, kind: 'sub', key, step: st, workflow: e.workflow, iteration: it, ...(actualPm[st] ?? cfgPm(st, e.workflow || meta.workflow)), reports: [] };
       if (pendingSwitch[st]) { subRow.switchFrom = pendingSwitch[st].from; delete pendingSwitch[st]; }
       rows.push(subRow);
     } else if (t === 'phase_complete') {
@@ -401,7 +444,7 @@ function timeline(runDir, routing, meta) {
     const reason = String(meta.reason ?? meta.failure?.error ?? '').replace(new RegExp('^Step "' + step.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '" failed:\\s*'), '');
     rows.push({ ts: meta.endTime ?? meta.updatedAt, kind: 'end', status: meta.status, step, key: key ?? '', reason, judge: key ? judges[key] : null });
   }
-  return { rows, lastOutput, unmatched, judges, lastJudgeKey, errors };
+  return { rows, lastOutput, unmatched, judges };
 }
 
 // ---------- レポート ----------
@@ -420,7 +463,7 @@ function reports(runDir) {
   return walkMd(base, base).sort((a, b) => a.mtime - b.mtime);
 }
 
-// ---------- max_steps（workflow yaml から。project → ~/.takt → builtins の順） ----------
+// ---------- workflow yaml（project → ~/.takt → builtins の順。max_steps と step の tags） ----------
 function taktPackageDir() {
   for (const dir of (process.env.PATH ?? '').split(path.delimiter)) {
     const bin = path.join(dir, 'takt');
@@ -429,20 +472,78 @@ function taktPackageDir() {
   }
   return null;
 }
-function maxStepsFor(workflow, root) {
-  if (!workflow) return null;
+// ワークフロー名から、存在して読める workflow yaml の本文を探す順に並べて返す（max_steps と step の tags で同じ探索を使う）
+function workflowYamls(workflow, root) {
+  if (!workflow) return [];
   const pkg = taktPackageDir();
   const candidates = [
     path.join(root, '.takt', 'workflows', workflow + '.yaml'),
     path.join(HOME, '.takt', 'workflows', workflow + '.yaml'),
     ...(pkg ? ['ja', 'en'].map((l) => path.join(pkg, 'builtins', l, 'workflows', workflow + '.yaml')) : []),
   ];
+  const texts = [];
   for (const p of candidates) {
     if (!existsSync(p)) continue;
-    const m = readFileSync(p, 'utf8').match(/^max_steps:\s*(\d+)/m);
+    try { texts.push(readFileSync(p, 'utf8')); } catch {}
+  }
+  return texts;
+}
+// max_steps が無いファイルは飛ばして次の候補を見る
+function maxStepsFor(workflow, root) {
+  for (const text of workflowYamls(workflow, root)) {
+    const m = text.match(/^max_steps:\s*(\d+)/m);
     if (m) return Number(m[1]);
   }
   return null;
+}
+// workflow yaml のトップレベルの steps: の下にある step（並列の子を含む）の tags: を { step 名: [tag, …] } で返す。
+// step は steps: 配下の配列要素（- で始まる塊）。YAML のキー順に意味は無く name: が最初とは限らないので、
+// 要素の直下に並ぶキー（先頭行で - の後に書かれたキーと同じ字下げ。- の後の空白は 1 つとは限らない）から name: と tags: を取る。
+// もっと深い字下げにある並列の子の name: / tags: は親のものとして拾わない。
+// tags: の書き方はブロック形式（tags: の次の行から - review）とフロー形式（tags: [review]。閉じ括弧まで複数行に分かれることもある）がある
+function stepTagsIn(text) {
+  const out = {};
+  const lines = text.split('\n').map((l) => stripYamlComment(l).trimEnd());
+  const start = lines.findIndex((l) => /^steps:/.test(l));
+  if (start < 0) return out;
+  let end = lines.findIndex((l, i) => i > start && /^\S/.test(l));
+  if (end < 0) end = lines.length;
+  const indentOf = (l) => l.match(/^\s*/)[0].length;
+  const unquote = (v) => v.trim().replace(/^['"]|['"]$/g, '');
+  for (let i = start + 1; i < end; i++) {
+    const m = lines[i].match(/^(\s*)-(\s+)\S/);
+    if (!m) continue;
+    const d = m[1].length; // - の位置
+    const kd = d + 1 + m[2].length; // 要素のキーの位置（- の後の空白の数ぶんずれる）
+    // 要素の本文。先頭行は「-」を空白に置き換えて、2 行目以降のキーと同じ字下げ（kd）で扱う
+    const body = [lines[i].replace(/^(\s*)-/, '$1 ')];
+    let j = i + 1;
+    for (; j < end && (!lines[j].trim() || indentOf(lines[j]) > d); j++) body.push(lines[j]);
+    let name = null; const tags = [];
+    for (let k = 0; k < body.length; k++) {
+      if (!body[k].trim() || indentOf(body[k]) !== kd) continue;
+      let x;
+      if ((x = body[k].match(/^\s*name:\s*(.+)$/))) name = unquote(x[1]);
+      else if ((x = body[k].match(/^\s*tags:\s*(.*)$/))) {
+        let v = x[1].trim();
+        if (v) {
+          // フロー形式。閉じ括弧が同じ行に無ければ、閉じ括弧の行まで続きをつなぐ
+          for (let q = k + 1; v.startsWith('[') && !v.includes(']') && q < body.length; q++) v += ' ' + body[q].trim();
+          tags.push(...v.replace(/^\[|\]$/g, '').split(',').map(unquote).filter(Boolean));
+        } else {
+          for (let q = k + 1; q < body.length; q++) {
+            if (!body[q].trim()) continue;
+            const y = body[q].match(/^(\s*)-\s*(.+)$/);
+            if (!y || y[1].length < kd) break; // tags: の項目でない行（次のキーなど）が来たら終わり
+            tags.push(unquote(y[2]));
+          }
+        }
+      }
+    }
+    if (name && /^[\w.-]+$/.test(name) && !Object.hasOwn(out, name)) out[name] = tags; // 同じ名前の step が複数あれば最初のもの
+    // 本文は読み飛ばさない。並列の子（parallel: の下の - name:）も本文の中にある要素なので、次の周で同じように見る
+  }
+  return out;
 }
 
 // ---------- tasks.yaml（worktree → 本体リポジトリを clone-meta で逆引き） ----------
@@ -518,7 +619,6 @@ function taskForRoot(root, cache) {
 // 一覧は新しい 20 件。表示中の run がそれより古いときは先頭に足す（ドロップダウンに無いと別の run が選ばれて見える）
 function runList(active, limit, all, taskCache) {
   const top = all.slice(0, limit);
-  top.total = all.length;
   if (active && !top.some((r) => r.runDir === active.runDir)) { const me = all.find((r) => r.runDir === active.runDir) ?? active; top.unshift(me); }
   const list = top.map((r) => {
     const t = taskForRoot(r.root, taskCache);
@@ -534,7 +634,7 @@ function state(sel, showAll = false) {
   const active = currentRun(sel, found, taskCache);
   if (!active) { const runs = runList(null, limit, found, taskCache); return { active: null, runs, runsTotal: runs.total, ...(sel ? { runNotFound: sel } : {}) }; }
   const routing = routingFor(active.runDir, active.meta.startTime);
-  const tl = timeline(active.runDir, routing, active.meta);
+  const tl = timeline(active.runDir, routing, active.meta, (wf) => stepTagsFor(active.runDir, routing, wf, active.root));
   const tasks = tasksYamlFor(active.root);
   const runs = runList(active, limit, found, taskCache);
   const task = taskForRoot(active.root, taskCache);
@@ -764,9 +864,9 @@ function pathHtml(nodes){
 // ポート同士を線で結ぶ。並列の枠は「前の箱 → 各子」「各子 → 次の箱」に扇状に広げる（公式の実行経路と同じ）
 function drawEdges(){
   const lane = document.querySelector('#path .lane'); if (!lane) return;
-  const svg = lane.querySelector('svg.edges'); const L = lane.getBoundingClientRect(); const k = 1;
+  const svg = lane.querySelector('svg.edges'); const L = lane.getBoundingClientRect();
   svg.setAttribute('width', lane.scrollWidth); svg.setAttribute('height', lane.scrollHeight);
-  const pt = (el, side) => { const r = el.querySelector('.port.'+side).getBoundingClientRect(); return [(r.left + r.width/2 - L.left) / k, (r.top + r.height/2 - L.top) / k]; };
+  const pt = (el, side) => { const r = el.querySelector('.port.'+side).getBoundingClientRect(); return [r.left + r.width/2 - L.left, r.top + r.height/2 - L.top]; };
   const items = [...lane.children].filter((el) => el.classList.contains('node') || el.classList.contains('group'));
   const outs = (el) => el.classList.contains('group') ? [...el.querySelectorAll('.node')] : [el];
   let d = '';
@@ -903,7 +1003,6 @@ function selectRun(v){
   }
   if (v) isRunMissing = false;
   selectedRun = v; lastRaw = null; history.replaceState(null, '', (v ? '?run='+encodeURIComponent(v) : location.pathname) + (DEMO ? (v ? '&' : '?') + 'demo=1' : '')); tick(); }
-function taskMark(s){ return s==='running' ? '🟢' : s==='completed' ? '✅' : s==='pending' ? '⏳' : '🔴'; }
 function statusLabel(s){ return s==='interrupted' ? '中断' : s; }
 function runLabel(r){ const mark = r.status==='running' ? '🟢 ' : (r.status==='completed' ? '✅ ' : (r.status==='interrupted' ? '🟠 中断 ' : '🔴 ' + r.status + ' ')); return mark + (r.label || r.slug.replace(/^\d{8}-\d{6}-/,'')) + '  (' + jst(r.updatedAt) + ' ' + r.step + ')'; }
 // 状態を取得できなかったことを #upd に出す。#app は消さず、最後に表示できていた画面を残す。

@@ -17,6 +17,7 @@
 - **レート上限・リトライ**: `rate_limited` で中断 → リトライした経緯と、provider の切替（`codex/gpt-5 → claude/sonnet`）を開始行に表示
 - **中断・失敗**: プロセスが落ちて `running` のまま残った run を「中断」と判定し、どのステップで止まったかを終了行に出す。失敗は理由（`rule_no_match` など）と judge のエラーログ付き
 - **provider / model**: 並列の子はログに provider が無いので、run 開始時点の `~/.takt/runtime.yaml`（または `config.yaml`）から引く。run ごとに結果を保存するので、後から yaml を変えても過去の表示は変わらない
+  - takt 本体と同じく `targets.steps` → `targets.tags` → `defaults` の順で引く。step の tag は workflow yaml の step の `tags:` から取り、これも run ごとに保存する
 - **レポート**: run の `reports/*.md` をステップに紐づけて一覧。クリックで本文を表示
 - 複数リポジトリ・worktree の run をまとめて一覧。2 秒ごとに自動更新
 
@@ -122,7 +123,7 @@ A local web dashboard for watching [TAKT](https://github.com/nrslib/takt) runs. 
 - Execution path view (cards, ports and curves) similar to the official Web UI, including parallel fan-out and retries
 - Rate-limit interruptions, retries and provider switches shown on the step's start row
 - Detects runs whose process died while `running` and marks them "interrupted" with the step that was in flight; failed runs show the reason and the judge error log
-- Resolves provider/model for parallel children from `~/.takt/runtime.yaml` (or `config.yaml`) **as of the run's start time**, using dated backups (`runtime.yaml.bak-*`, `config.yaml.bak.*`) when present; the result is saved per run under `~/.config/takt-dashboard/routing/`
+- Resolves provider/model for parallel children from `~/.takt/runtime.yaml` (or `config.yaml`) **as of the run's start time**, using dated backups (`runtime.yaml.bak-*`, `config.yaml.bak.*`) when present; the result is saved per run under `~/.config/takt-dashboard/routing/`. Like takt itself, it checks `targets.steps`, then `targets.tags` (matched against the step's `tags:` in the workflow yaml, also saved per run), then `defaults`
 - Lists runs across multiple repositories and worktrees; refreshes every 2 seconds
 
 **Usage**
