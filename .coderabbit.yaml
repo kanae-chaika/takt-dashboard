@@ -5,3 +5,5 @@ reviews:
   auto_review:
     drafts: true # takt は PR を draft で作るため
     base_branches: [".*"] # 向き先が main 以外の PR（takt のブランチの上に積んだ PR など）もレビューする
+  auto_approvals:
+    enabled: true # 指摘があれば Changes requested、解決して最新コミットのレビューが済めば Approved を出す。レビューが終わったかを PR の見出しで分かるようにするため
