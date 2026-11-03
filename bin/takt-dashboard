@@ -23,7 +23,7 @@ const expandHome = (p) => path.resolve(p.replace(/^~(?=\/|$)/, HOME));
 // config.yaml は roots（リスト or , 区切り）と port だけの簡単な形式。yaml ライブラリ無しで読む
 // yaml の行末コメントを外す（config.yaml / runtime.yaml / workflow yaml の自前パースで共通）。
 // YAML の # は行頭か空白の後にあるものだけがコメントで、引用符の中の #（例: "review#critical"）や空白を挟まない #（例: a#b）は値の一部。
-// 引用符は値の先頭（行頭・空白・[ { , : - の後）で始まるものだけを見る
+// 引用符は値の先頭（行頭、「- 」の後、「キー: 」の後、[ { , の後）にあるものだけが引用の開始。平文の値の途中の引用符（例: /tmp/repo '23）は値の一部
 function stripYamlComment(l) {
   let q = null;
   for (let i = 0; i < l.length; i++) {
@@ -32,7 +32,7 @@ function stripYamlComment(l) {
       if (q === '"' && c === '\\') i++; // "…\"…" のエスケープ
       else if (q === "'" && c === "'" && l[i + 1] === "'") i++; // '…''…' は ' のエスケープ
       else if (c === q) q = null;
-    } else if ((c === '"' || c === "'") && /(^|[\s[{,:-])$/.test(l.slice(0, i))) q = c;
+    } else if ((c === '"' || c === "'") && /(^\s*|(^|\s)-\s+|:\s+|[[{,]\s*)$/.test(l.slice(0, i))) q = c;
     else if (c === '#' && (i === 0 || /\s/.test(l[i - 1]))) return l.slice(0, i);
   }
   return l;

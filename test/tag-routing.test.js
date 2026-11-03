@@ -79,6 +79,8 @@ steps:
                  coding] # 複数行にまたがるフロー形式
         - name: hash-tag-review
           tags: ["x#y", 'p#q', review] # 引用符の中の # は値の一部。行末のこれはコメント
+        - name: mid-quote-review
+          tags: [rev 'a, review] # 平文の値の途中の ' は値の一部で、引用の開始ではない。行末のこれはコメント
     rules:
       - condition: all("approved")
         next: fix
@@ -138,7 +140,7 @@ function writeRun(slug, { workflow, parentWorkflow = workflow, parentStep = 'rev
 
 // run の定義。before() で writeRun に渡して作る
 const RUN_DEFS = {
-  tag: ['20261101-100000-tag', { workflow: 'tagwf', subs: [['arch-review', 'tagwf'], ['flow-review', undefined], ['pinned-review', 'tagwf'], ['untagged-review', 'tagwf'], ['unknown-tag-review', 'tagwf'], ['multi-review', 'tagwf'], ['late-name-review', 'tagwf'], ['desc-first-review', 'tagwf'], ['wide-dash-review', 'tagwf'], ['multiline-flow-review', 'tagwf'], ['hash-tag-review', 'tagwf']] }],
+  tag: ['20261101-100000-tag', { workflow: 'tagwf', subs: [['arch-review', 'tagwf'], ['flow-review', undefined], ['pinned-review', 'tagwf'], ['untagged-review', 'tagwf'], ['unknown-tag-review', 'tagwf'], ['multi-review', 'tagwf'], ['late-name-review', 'tagwf'], ['desc-first-review', 'tagwf'], ['wide-dash-review', 'tagwf'], ['multiline-flow-review', 'tagwf'], ['hash-tag-review', 'tagwf'], ['mid-quote-review', 'tagwf']] }],
   // reviewers 自身を並列の子の行として出すため、親の step_start は別の名前にする
   parent: ['20261101-100600-parent', { workflow: 'tagwf', parentStep: 'outer', subs: [['reviewers', 'tagwf']] }],
   // 子のワークフロー（e.workflow）が run のワークフロー（meta.workflow）と違う run。子の行は e.workflow の yaml から引く
@@ -232,6 +234,12 @@ test('引用符の中の #（"x#y"）はコメントとして削らず、その�
   assert.deepEqual(await subPm(RUN_TAG, 'hash-tag-review'), { provider: 'codex', model: 'gpt-5', source: 'runtime.yaml' });
   const snap = JSON.parse(fs.readFileSync(path.join(SNAP_DIR, path.basename(RUN_TAG) + '.json'), 'utf8'));
   assert.deepEqual(snap.stepTags.tagwf['hash-tag-review'], ['x#y', 'p#q', 'review']);
+});
+
+test("平文の値の途中にある引用符（rev 'a）を引用の開始と見なさず、行末の # コメントを外す", async () => {
+  assert.deepEqual(await subPm(RUN_TAG, 'mid-quote-review'), { provider: 'codex', model: 'gpt-5', source: 'runtime.yaml' });
+  const snap = JSON.parse(fs.readFileSync(path.join(SNAP_DIR, path.basename(RUN_TAG) + '.json'), 'utf8'));
+  assert.deepEqual(snap.stepTags.tagwf['mid-quote-review'], ["rev 'a", 'review']);
 });
 
 test('routing の控えは一時ファイルに書いてから置き換える（.tmp が残らず、控えは JSON として読めて stepTags を含む）', async () => {
