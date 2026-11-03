@@ -660,6 +660,7 @@ const HTML = `<!DOCTYPE html>
   .node .jl { color:var(--fg); max-width:200px; overflow:hidden; text-overflow:ellipsis; display:inline-block; } .jl.j-approved { color:var(--ok); } .jl.j-rejected, .node.st-err .jl { color:var(--err); } .node.st-warn .jl { color:var(--warn); }
   .port { position:absolute; top:50%; width:8px; height:8px; border-radius:50%; background:var(--panel); border:1px solid var(--dim); transform:translateY(-50%); }
   .port.prev { left:-5px; } .port.next { right:-5px; }
+  .lane > .first .port.prev, .lane > .last .port.next { display:none; } /* 経路の両端は線がつながらないのでポートを出さない（最初の箱の左のポートが .path の overflow で切れて見える問題も無くなる） */
   .group { position:relative; border:1px dashed rgba(233,245,238,.25); border-radius:10px; padding:6px 12px 10px; display:flex; flex-direction:column; gap:6px; }
   .group .gl { font-size:10px; letter-spacing:.08em; color:var(--dim); text-transform:uppercase; white-space:nowrap; margin-bottom:2px; }
   .group.st-warn { border-color:rgba(233,187,58,.5); } .group.st-warn .gl .jl { color:var(--warn); text-transform:none; }
@@ -744,20 +745,21 @@ function pathModel(tl, meta){
   for (const n of nodes) { n.cls = n.kind==='end' ? (n.status==='interrupted' ? 'intr' : 'err') : st(n.status); for (const c of n.children) c.cls = st(c.status); }
   return nodes;
 }
-function cardHtml(n, big){
+function cardHtml(n, big, edge=''){ // edge: 経路の端の印（' first' / ' last'）。端のポートを出さないために使う
   const j = n.ji>=0 ? ' has-j" role="button" tabindex="0" data-ji="'+n.ji : ''; // 判定を開けるノードだけキーボードで操作できるようにする
   const t = ' title="'+escA((n.ts?jst(n.ts):'')+(n.tsEnd?' → '+jst(n.tsEnd):''))+'"';
   const jc = n.label ? (/^approve/i.test(n.label) ? ' j-approved' : /^(reject|needs_fix)/i.test(n.label) ? ' j-rejected' : '') : '';
   const label = n.label ? '<span class="jl'+jc+'" title="'+escA(n.label)+'">'+esc(n.label)+'</span>' : (n.reason ? '<span class="jl">'+esc(n.reason)+'</span>' : '<span class="muted">'+esc(n.status ?? (n.cls==='run'?'実行中':''))+'</span>');
-  return '<div class="node st-'+n.cls+j+'"'+t+'><span class="port prev"></span><span class="port next"></span>'
+  return '<div class="node st-'+n.cls+edge+j+'"'+t+'><span class="port prev"></span><span class="port next"></span>'
     + '<div class="nm">'+esc(n.name)+(big && n.workflow && n.workflow!=='default' ? ' <span class="wf">['+esc(n.workflow)+']</span>' : '')+(big && n.iter ? ' <span class="wf">· '+n.iter+'/'+(MAX ?? '?')+'</span>' : '')+'</div>'
     + '<div class="sv"><span class="dot"></span>'+label+'</div>'
     + (n.pm ? '<div class="pmv">'+pm(n.pm)+'</div>' : '') + '</div>';
 }
 function pathHtml(nodes){
-  return '<div class="lane">' + nodes.map((n) => n.kind==='parallel'
-    ? '<div class="group st-'+n.cls+'"><span class="gl">parallel · '+esc(n.name)+(n.iter ? ' · '+n.iter+'/'+(MAX ?? '?') : '')+(n.status && n.status!=='done' ? ' · <span class="jl">'+esc(n.status==='rate_limited' ? 'rate_limited → リトライ' : n.status)+'</span>' : '')+'</span>'+n.children.map((c) => cardHtml(c, false)).join('')+'</div>'
-    : cardHtml(n, true)).join('') + '<svg class="edges"></svg></div>';
+  const edgeOf = (i) => (i===0 ? ' first' : '') + (i===nodes.length-1 ? ' last' : '');
+  return '<div class="lane">' + nodes.map((n, i) => n.kind==='parallel'
+    ? '<div class="group st-'+n.cls+edgeOf(i)+'"><span class="gl">parallel · '+esc(n.name)+(n.iter ? ' · '+n.iter+'/'+(MAX ?? '?') : '')+(n.status && n.status!=='done' ? ' · <span class="jl">'+esc(n.status==='rate_limited' ? 'rate_limited → リトライ' : n.status)+'</span>' : '')+'</span>'+n.children.map((c) => cardHtml(c, false)).join('')+'</div>'
+    : cardHtml(n, true, edgeOf(i))).join('') + '<svg class="edges"></svg></div>';
 }
 // ポート同士を線で結ぶ。並列の枠は「前の箱 → 各子」「各子 → 次の箱」に扇状に広げる（公式の実行経路と同じ）
 function drawEdges(){
