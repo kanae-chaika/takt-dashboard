@@ -51,7 +51,7 @@ function writeRun(runDir, slug, updatedAt) {
   fs.writeFileSync(path.join(runDir, 'meta.json'), JSON.stringify({ status: 'completed', runSlug: slug, currentStep: 'plan', startTime: updatedAt, updatedAt }));
 }
 // takt は tasks.yaml を yaml ライブラリの stringify で書く。空白を含むパスも引用符なしの平文になる（takt 0.74.0 の yaml で確認）
-// 各タスクの最初のキーは「  - 」の行に書かれる。parseTasks は 4 スペース字下げの行だけを読むので、確かめる name は 2 つ目以降に置く
+// 各タスクの最初のキーは「  - 」の行に書かれる（先頭キーの読み取りは test/tasks-yaml.test.js で確かめる）
 function writeTasks(repo, tasks) {
   fs.mkdirSync(path.join(repo, '.takt'), { recursive: true });
   const lines = ['tasks:', ...tasks.flatMap((t) => Object.entries(t).map(([k, v], i) => (i === 0 ? '  - ' : '    ') + k + ': ' + v))];
