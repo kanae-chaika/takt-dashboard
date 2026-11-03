@@ -601,6 +601,22 @@ test('run の一覧のラベルから slug の日時プレフィックス（YYYY
   assert.ok(!label.includes('20261029-100000-'), label);
 });
 
+test('レポートの取得を待つ間に run を選び直したら、遅れて届いたレポートでモーダルを開かない', async () => {
+  const page = await renderedPage();
+  const d = page.document;
+  let release; const held = new Promise((r) => { release = r; });
+  const text = Promise.resolve('切り替え前の run のレポート');
+  const realFetch = page.ctx.fetch;
+  page.ctx.fetch = (u) => u.startsWith('/api/report') ? held.then(() => ({ text: () => text })) : realFetch(u);
+  press(page, d.querySelector('#tl .rep[data-rel="plan.md"]'), 'Enter');
+  page.ctx.selectRun(RUN);
+  await settle(); await settle();
+  release();
+  await held; await text; await settle();
+  assert.equal(page.viewer.open, false, '切り替え前の run のレポートで開かない');
+  page.ctx.fetch = realFetch;
+});
+
 test('レポートの取得を待つ間に別の判定を開いたら、遅れて届いたレポートで中身を上書きせず、閉じると判定を開いた要素に戻る', async () => {
   const page = await renderedPage();
   const d = page.document;

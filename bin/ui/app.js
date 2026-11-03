@@ -219,6 +219,7 @@ let SHOW_ALL = false;
 let selGen = 0;
 function selectRun(v){
   selGen++;
+  viewerGen++; // 切り替え前の run で取得中のレポートが、切り替え後に遅れて届いても開かない
   if (v === '__more__') {
     // 全件に切り替えたあと、閉じてしまったプルダウンを開き直す（showPicker はクリック直後の数秒だけ許される。非対応ブラウザでは何もしない）
     SHOW_ALL = true; lastRaw = null;
