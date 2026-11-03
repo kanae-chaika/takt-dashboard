@@ -61,7 +61,8 @@ npm test                     # node --test（引数なし。test/ 配下を既�
 npm run lint                 # ESLint（検査のみ）
 ```
 
-- `engines.node >= 20`。`node:test` を使うので別のテストランナーは入れない
+- `engines.node >= 20` は実行時の要件。開発ツールの ESLint 10 は Node.js 20.19 以上 / 22.13 以上 / 24 以上が必要（21・23 は対象外）なので、手元の Node が古いと `npm install` が失敗することがある
+- `node:test` を使うので別のテストランナーは入れない
 - **push 前にローカルで `npm run lint` と `npm test` を通す。** CI（GitHub Actions）でも同じものが回るが、CI 待ちで直すのではなく手元で通してから push する
 - ESLint は検査だけで、formatter は無い。シングルクォート・セミコロンあり・1 行に詰める既存の書き方に揃える。ESLint の指摘を黙らせるルール追加は、既存の書き方を守るために必要な場合だけにする（既存の `allowEmptyCatch` / `no-regex-spaces` / `ignoreRestSiblings` がその例）
 - テストは実環境の `~/.takt` / `~/.config/takt-dashboard` を読まないよう、`HOME` と cwd を一時ディレクトリにして起動する（起動・停止は `test/helpers.js` の `startDashboard` / `stopDashboard` を使う。`--port 0` で起動し、起動メッセージから実際のポートを読む）
