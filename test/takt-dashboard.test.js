@@ -176,7 +176,7 @@ test('/api/report にファイルを渡すと 200 text/plain でその内容を�
   assert.equal(await res.text(), '# レポート\n本文\n');
 });
 
-test('/ は 200 text/html で no-store を付けて返す', async (t) => {
+test('/ は 200 text/html で no-store を付け、bin/ui の CSS と JS を 1 枚の HTML に埋め込んで返す', async (t) => {
   // Given: 有効な run を開いたサーバー
   const sandbox = makeSandbox(t);
   const runDir = makeRun(path.join(sandbox, '.takt', 'runs', 'run-html'));
@@ -185,9 +185,12 @@ test('/ は 200 text/html で no-store を付けて返す', async (t) => {
   // When: ページを要求する
   const res = await fetch(s.base + '/');
 
-  // Then: 200・text/html・cache-control no-store
+  // Then: 200・text/html・cache-control no-store。CSS / JS は別ファイルへの参照ではなく中身が入っている（ルートは / だけで済ませる）
   assert.equal(res.status, 200);
   assert.match(res.headers.get('content-type'), /^text\/html/);
   assert.equal(res.headers.get('cache-control'), 'no-store');
-  await res.arrayBuffer();
+  const html = await res.text();
+  assert.doesNotMatch(html, /<link rel="stylesheet"|<script src=/);
+  assert.match(html, /<style>\n[\s\S]+<\/style>/);
+  assert.match(html, /<script>\n[\s\S]*function tick\(\)[\s\S]*<\/script>/);
 });

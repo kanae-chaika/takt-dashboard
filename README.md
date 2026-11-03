@@ -1,7 +1,7 @@
 # takt-dashboard
 
 [TAKT](https://github.com/nrslib/takt) の run をブラウザで見張るローカルダッシュボードです。
-依存ライブラリなし（Node.js 標準ライブラリのみ）、1 ファイルで動きます。
+依存ライブラリなし（Node.js 標準ライブラリのみ）で動きます。
 
 [English](#english) is below.
 
@@ -114,7 +114,7 @@ MIT
 
 ## English
 
-A local web dashboard for watching [TAKT](https://github.com/nrslib/takt) runs. Single file, no dependencies (Node.js standard library only).
+A local web dashboard for watching [TAKT](https://github.com/nrslib/takt) runs. No dependencies (Node.js standard library only).
 
 **Features**
 
