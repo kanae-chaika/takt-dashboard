@@ -45,20 +45,24 @@ function openJudge(r){
 // ---------- タイムラインの高さ（下端のバーをドラッグ。localStorage に保存） ----------
 // 上段（実行中のタスク + タイムライン）は一体で、下のバーをドラッグすると両方の高さが変わる。経路はそれに合わせて上下する
 let TL_H = 460; try { TL_H = Number(localStorage.getItem('tlH')) || 460; } catch {}
+// 高さの範囲。下限はタイムラインの見出しと数行が残る高さ。上限は aria-valuemax のために決めたもの（省略すると 100 と解釈され、既定の 460 が範囲外になる）で、
+// ドラッグ・キー操作とも同じ値で止める
+const TL_H_MIN = 180, TL_H_MAX = 2000;
+const clampRowH = (h) => Math.min(TL_H_MAX, Math.max(TL_H_MIN, h));
 function applyRowH(){
   for (const el of document.querySelectorAll('section.toprow')) el.style.height = TL_H + 'px'; const tl = document.getElementById('tl'); if (tl) tl.style.height = (TL_H - 62) + 'px';
   const rz = document.getElementById('tlrz'); if (rz) { rz.setAttribute('aria-valuenow', String(TL_H)); rz.setAttribute('aria-valuetext', TL_H + 'px'); } // 読み上げに今の高さを伝える
 }
 function resetRowH(){ TL_H = 460; applyRowH(); try { localStorage.removeItem('tlH'); } catch {} drawEdges(); }
 document.addEventListener('dblclick', (e) => { if (e.target.id === 'tlrz') resetRowH(); }); // ダブルクリックで既定の高さに戻す
-// マウスを使えない人もバーで高さを変えられるようにする: ↓ / ↑ で 20px ずつ（下限はドラッグと同じ 180）、Enter で既定に戻す（ダブルクリックと同じ）。
+// マウスを使えない人もバーで高さを変えられるようにする: ↓ / ↑ で 20px ずつ（範囲はドラッグと同じ）、Enter で既定に戻す（ダブルクリックと同じ）。
 // 矢印キーの既定動作（ページのスクロール）は止める。バー自身がフォーカスされているときだけ反応する
 document.addEventListener('keydown', (e) => {
   if (e.target.id !== 'tlrz') return;
   if (e.key === 'Enter') { e.preventDefault(); resetRowH(); return; }
   if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
   e.preventDefault();
-  TL_H = Math.max(180, TL_H + (e.key === 'ArrowDown' ? 20 : -20)); applyRowH();
+  TL_H = clampRowH(TL_H + (e.key === 'ArrowDown' ? 20 : -20)); applyRowH();
   try { localStorage.setItem('tlH', String(TL_H)); } catch {}
   drawEdges();
 });
@@ -66,7 +70,7 @@ document.addEventListener('mousedown', (e) => {
   if (!(e.target.id === 'tlrz')) return;
   e.preventDefault();
   const y0 = e.clientY, h0 = TL_H;
-  const move = (ev) => { TL_H = Math.max(180, Math.round(h0 + ev.clientY - y0)); applyRowH(); };
+  const move = (ev) => { TL_H = clampRowH(Math.round(h0 + ev.clientY - y0)); applyRowH(); };
   const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); document.body.style.cursor = ''; try { localStorage.setItem('tlH', String(TL_H)); } catch {} drawEdges(); };
   document.body.style.cursor = 'row-resize';
   document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
@@ -328,7 +332,7 @@ async function tick(){
     </section>
 
     <section class="wide pathsec">
-      <div class="rz" id="tlrz" tabindex="0" role="separator" aria-orientation="horizontal" aria-label="上段（タスク・タイムライン）の高さ" aria-valuemin="180" aria-valuenow="${TL_H}" aria-valuetext="${TL_H}px" title="ドラッグか ↓ / ↑ キーで上段（タスク・タイムライン）の高さを変更。ダブルクリックか Enter で既定に戻す"></div>
+      <div class="rz" id="tlrz" tabindex="0" role="separator" aria-orientation="horizontal" aria-label="上段（タスク・タイムライン）の高さ" aria-valuemin="${TL_H_MIN}" aria-valuemax="${TL_H_MAX}" aria-valuenow="${TL_H}" aria-valuetext="${TL_H}px" title="ドラッグか ↓ / ↑ キーで上段（タスク・タイムライン）の高さを変更。ダブルクリックか Enter で既定に戻す"></div>
       <h2>実行経路</h2>
       <div id="path" class="scroll path">${pathHtml(pathModel(tl, m))}</div>
     </section>

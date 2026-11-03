@@ -941,12 +941,13 @@ test('高さを変えるバーは Tab でフォーカスでき、名前・role�
   assert.equal(rz.getAttribute('aria-orientation'), 'horizontal');
   assert.ok(rz.getAttribute('aria-label'));
   assert.equal(rz.getAttribute('aria-valuemin'), '180');
+  assert.equal(rz.getAttribute('aria-valuemax'), '2000'); // 省略すると 100 と解釈され、既定の 460 が範囲外になる
   assert.equal(rz.getAttribute('aria-valuenow'), '460');
   rz.focus();
   assertSameElement(page.document.activeElement, rz);
 });
 
-test('高さを変えるバーで ↓ / ↑ を押すと 20px ずつ変わり（下限 180）、マウスと同じく保存して経路を描き直す。スクロールは止める', async () => {
+test('高さを変えるバーで ↓ / ↑ を押すと 20px ずつ変わり（下限 180・上限 2000）、マウスと同じく保存して経路を描き直す。スクロールは止める', async () => {
   const page = await renderedPage();
   const calls = recordStorage(page);
   const d = page.document;
@@ -962,6 +963,10 @@ test('高さを変えるバーで ↓ / ↑ を押すと 20px ずつ変わり（
   assert.deepEqual(rowHeights(page), ['180px', '180px']);
   assert.equal(d.getElementById('tlrz').getAttribute('aria-valuenow'), '180');
   assert.deepEqual(calls.at(-1), ['set', 'tlH', '180']);
+  for (let i = 0; i < 120; i++) press(page, d.getElementById('tlrz'), 'ArrowDown'); // 180 + 20 × 91 = 2000 で止まる
+  assert.deepEqual(rowHeights(page), ['2000px', '2000px']);
+  assert.equal(d.getElementById('tlrz').getAttribute('aria-valuenow'), '2000');
+  assert.deepEqual(calls.at(-1), ['set', 'tlH', '2000']);
 });
 
 test('高さを変えるバーで Enter を押すと、ダブルクリックと同じく既定の高さ（460）に戻し、保存した高さを消す', async () => {
