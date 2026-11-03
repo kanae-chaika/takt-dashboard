@@ -204,6 +204,58 @@ test('/api/report にファイルを渡すと 200 text/plain でその内容を�
   assert.equal(await res.text(), '# レポート\n本文\n');
 });
 
+// reportText は p を reports/ 基準で解決し、reports/ の中に収まらないパスを弾く（run の外のファイルを読ませない）。
+// 弾いた結果の 404 と「ファイルが無い」404 を区別するため、指すファイルはどれも実在させ、同じサーバーで reports/ の中のファイルは 200 になることも確かめる
+async function startWithOutsideFiles(t) {
+  const sandbox = makeSandbox(t);
+  const runDir = makeRun(path.join(sandbox, '.takt', 'runs', 'run-report-escape'));
+  writeFileSync(path.join(runDir, 'reports', 'a.md'), '# レポート\n');
+  const s = await startDashboard(t, sandbox, [runDir]);
+  return { sandbox, runDir, s };
+}
+
+test('/api/report に p=../meta.json を渡すと 404 not found になり、run の meta.json を返さない', async (t) => {
+  // Given: reports/a.md と meta.json がある run を開いたサーバー
+  const { s } = await startWithOutsideFiles(t);
+
+  // When: reports/ の 1 つ上（run の直下）の meta.json を相対パスで要求する
+  const res = await fetch(s.base + '/api/report?p=' + encodeURIComponent('../meta.json'));
+
+  // Then: 404・not found（meta.json の中身ではない）。reports/ の中のファイルは同じサーバーで読める
+  assert.equal(res.status, 404);
+  assert.equal(await res.text(), 'not found');
+  assert.equal((await fetch(s.base + '/api/report?p=a.md')).status, 200);
+});
+
+test('/api/report に run の外のファイルの絶対パスを渡すと 404 not found になり、その中身を返さない', async (t) => {
+  // Given: run の外（sandbox の直下）に実在するファイル
+  const { sandbox, s } = await startWithOutsideFiles(t);
+  const secret = path.join(sandbox, 'secret.txt');
+  writeFileSync(secret, '秘密\n');
+
+  // When: その絶対パスを p に渡す
+  const res = await fetch(s.base + '/api/report?p=' + encodeURIComponent(secret));
+
+  // Then: 404・not found
+  assert.equal(res.status, 404);
+  assert.equal(await res.text(), 'not found');
+  assert.equal((await fetch(s.base + '/api/report?p=a.md')).status, 200);
+});
+
+test('/api/report に reports と名前の先頭が同じ隣のディレクトリのファイルを渡しても 404 not found になる', async (t) => {
+  // Given: run の直下に reports-other/b.md（reports/ の外だが、パスの文字列は reports で始まる）
+  const { runDir, s } = await startWithOutsideFiles(t);
+  mkdirSync(path.join(runDir, 'reports-other'));
+  writeFileSync(path.join(runDir, 'reports-other', 'b.md'), '# 隣\n');
+
+  // When: ../reports-other/b.md を要求する（区切り文字を見ずに前方一致だけで判定すると通ってしまう）
+  const res = await fetch(s.base + '/api/report?p=' + encodeURIComponent('../reports-other/b.md'));
+
+  // Then: 404・not found
+  assert.equal(res.status, 404);
+  assert.equal(await res.text(), 'not found');
+});
+
 test('/ は 200 text/html で no-store を付け、bin/ui の CSS と JS を 1 枚の HTML に埋め込んで返す', async (t) => {
   // Given: 有効な run を開いたサーバー
   const sandbox = makeSandbox(t);
