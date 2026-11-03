@@ -20,6 +20,13 @@ const args = process.argv.slice(2);
 //   takt-logo.svg      ヘッダーのロゴを差し替えたいとき（任意。通常は takt 本体同梱のロゴを使う）
 const CFG_DIR = path.join(HOME, '.config', 'takt-dashboard');
 const expandHome = (p) => path.resolve(p.replace(/^~(?=\/|$)/, HOME));
+// 表示用に HOME を ~ に縮める。文字列の前方一致ではなく path.relative で判定する（HOME と先頭だけ同じ別ディレクトリ（/Users/foo に対する /Users/foobar）を縮めないため、
+// また os.homedir() は環境変数 HOME をそのまま返すので、末尾に / が付いた HOME や / の HOME でも HOME 配下を縮めるため）
+const tildify = (p) => {
+  const rel = path.relative(HOME, p);
+  if (!rel) return '~';
+  return rel === '..' || rel.startsWith('..' + path.sep) || path.isAbsolute(rel) ? p : path.join('~', rel);
+};
 // config.yaml は roots（リスト or , 区切り）と port だけの簡単な形式。yaml ライブラリ無しで読む
 function loadConfig() {
   const cfg = { roots: [], port: null };
@@ -538,7 +545,7 @@ function state(sel, showAll = false) {
     active: { meta: active.meta, runDir: active.runDir, root: active.root, reports: tl.unmatched, maxSteps: maxStepsFor(active.meta.workflow, active.root) },
     timeline: tl.rows,
     lastOutput: tl.lastOutput,
-    tasksPath: tasks.path,
+    tasksPath: tasks.path ? tildify(tasks.path) : null, // 表示用（画面で HOME を決め打ちせずに済むよう、サーバーの HOME で縮める）
     // リポジトリ名: tasks.yaml の置き場（<repo>/.takt/tasks.yaml）から取る。取れなければ run のルートのディレクトリ名
     repo: path.basename(tasks.path ? path.resolve(tasks.path, '..', '..') : active.root),
     currentTask, // worktree が一致するエントリだけ。無ければ「キューなし」
@@ -816,8 +823,11 @@ function rowHtml(r, i){
 }
 async function openReport(rel){
   const gen = viewerGen;
-  const t = await (await fetch('/api/report?p='+encodeURIComponent(rel)+(selectedRun ? '&run='+encodeURIComponent(selectedRun) : ''))).text();
+  let r = null; // 取得できなければ null（サーバー停止・ネットワーク断）
+  try { const res = await fetch('/api/report?p='+encodeURIComponent(rel)+(selectedRun ? '&run='+encodeURIComponent(selectedRun) : '')); r = { ok: res.ok, status: res.status, text: await res.text() }; } catch {}
   if (gen !== viewerGen) return; // 取得を待つ間に別のレポート・判定を開いていたら、古い応答で中身と開いた要素を上書きしない
+  // サーバーはレポート・run が無いと 404（本文 not found）、処理の失敗で 500（本文 internal error）を返す。その本文をレポートとして見せない
+  const t = !r ? 'レポートを取得できません' : r.status === 404 ? 'レポートが見つかりません' : !r.ok ? 'レポートを取得できません' : r.text;
   document.getElementById('vtitle').textContent = rel;
   const body = document.getElementById('vbody'); body.textContent = t; body.scrollTop = 0; body.style.fontSize = '';
   showViewer();
@@ -894,17 +904,30 @@ function selectRun(v){
 function taskMark(s){ return s==='running' ? '🟢' : s==='completed' ? '✅' : s==='pending' ? '⏳' : '🔴'; }
 function statusLabel(s){ return s==='interrupted' ? '中断' : s; }
 function runLabel(r){ const mark = r.status==='running' ? '🟢 ' : (r.status==='completed' ? '✅ ' : (r.status==='interrupted' ? '🟠 中断 ' : '🔴 ' + r.status + ' ')); return mark + (r.label || r.slug.replace(/^\d{8}-\d{6}-/,'')) + '  (' + jst(r.updatedAt) + ' ' + r.step + ')'; }
+// 状態を取得できなかったことを #upd に出す。#app は消さず、最後に表示できていた画面を残す。
+// lastRaw を捨てるのは、復旧後の応答が失敗前と同じでも描き直して、このエラー表示を消すため
+function showStateError(){ lastRaw = null; document.getElementById('upd').innerHTML = '<span class="err">サーバーから取得できません</span>'; }
+// 取得が 2 秒を超えると次の tick と重なる。後から始めた取得の結果（成功・失敗とも）を反映した後に届いた、先に始めた取得の結果は捨てる（同じ世代なので selGen では見分けられない）
+let tickSeq = 0, shownSeq = 0;
 async function tick(){
-  const reqRun = selectedRun, gen = selGen;
-  const raw = await (await fetch('/api/state?' + (reqRun ? 'run='+encodeURIComponent(reqRun) : '') + (SHOW_ALL ? '&all=1' : ''))).text();
+  const reqRun = selectedRun, gen = selGen, seq = ++tickSeq;
+  let raw;
+  try {
+    const res = await fetch('/api/state?' + (reqRun ? 'run='+encodeURIComponent(reqRun) : '') + (SHOW_ALL ? '&all=1' : ''));
+    if (!res.ok) throw new Error('HTTP ' + res.status); // 500 の本文は internal error で JSON ではない
+    raw = await res.text();
+  } catch { if (gen === selGen && seq > shownSeq) { shownSeq = seq; showStateError(); } return; } // 古い世代の失敗・後から始めた取得の結果より前の失敗は、その後の表示を上書きしないよう捨てる
   if (gen !== selGen) return; // 応答待ちの間に選択を変えられたら古い応答は捨てる（後から届いて選んだ run の表示や選択を上書きしないように）
+  if (seq < shownSeq) return; // 後から始めた取得の結果（失敗のエラー表示を含む）を、先に始めた取得の古い応答で上書きしない
+  shownSeq = seq;
   if (raw === lastRaw) {
     const el = document.getElementById('elapsed');
     if (el && lastMeta && lastMeta.status === 'running') el.textContent = fmt(Date.now() - new Date(lastMeta.startTime).getTime());
     return;
   }
   lastRaw = raw;
-  const st = DEMO ? demoize(JSON.parse(raw)) : JSON.parse(raw);
+  let parsed; try { parsed = JSON.parse(raw); } catch { showStateError(); return; }
+  const st = DEMO ? demoize(parsed) : parsed;
   // ?run= の run が見つからない: 選択と URL の ?run= を外して最新の run を取り直す
   if (st.runNotFound) { isRunMissing = true; selectRun(''); return; }
   const a = st.active;
@@ -922,7 +945,8 @@ async function tick(){
   // Tab で #app の中の要素に移っていたら、作り直した後も同じ位置の要素へフォーカスを戻す（戻さないと body に落ち、Tab を最初からやり直すことになる）
   const fa = document.activeElement; const focusInApp = fa && document.getElementById('app').contains(fa) ? locate(fa) : null;
   const notFoundMsg = isRunMissing ? '<span class="err">指定した run が見つかりません</span> ' : '';
-  if (!a) { if (isRunMissing) document.getElementById('upd').innerHTML = notFoundMsg; document.getElementById('app').innerHTML = '<section class="wide">takt の run が見つかりません</section>'; return; }
+  // run が無いときも #upd を書き直す（isRunMissing でなくても。取得失敗のエラー表示を残さないため）
+  if (!a) { document.getElementById('upd').innerHTML = notFoundMsg; document.getElementById('app').innerHTML = '<section class="wide">takt の run が見つかりません</section>'; return; }
   const m = a.meta;
   MAX = a.maxSteps ?? null;
   document.getElementById('upd').innerHTML = notFoundMsg + esc('最終更新 ' + jst(m.updatedAt));
@@ -967,7 +991,7 @@ async function tick(){
       <pre id="out" class="scroll">\${esc(st.lastOutput ? st.lastOutput.content.split('\\n').slice(-60).join('\\n') : '(まだありません)')}</pre>
     </section>
     <section class="c3">
-      <h2>タスクキュー\${st.tasksPath ? ' — '+esc(st.tasksPath.replace(/^\\/Users\\/[^/]+/, '~')) : ''}</h2>
+      <h2>タスクキュー\${st.tasksPath ? ' — '+esc(st.tasksPath) : ''}</h2>
       <pre id="tasks" class="scroll" style="max-height:none">\${esc(st.currentTask ? st.currentTask.raw : '(この run に対応するキューはありません)')}</pre>
     </section>\`}\`;
   restoreScroll(keep, winY);

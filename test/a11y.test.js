@@ -1,5 +1,5 @@
 // 実行: node --test test/a11y.test.js
-// 画面のキーボード操作・モーダル・ラベル（Issue #1 の指摘 11〜14）。
+// 画面のキーボード操作・モーダル・ラベル（Issue #1 の指摘 11〜14）と、状態・レポートの取得失敗の表示・タスクキューのパスの表示（指摘 15・16）。
 // bin/takt-dashboard を子プロセスで起動し、/ の HTML と、その中の <script> を node:vm で動かした結果で確認する。
 // ブラウザは使えない（依存ライブラリを入れない）ので、テスト内の小さな DOM の代わり（FakeDocument）で動かす。
 // FakeDocument は、ブラウザが行う次の動作だけを真似する:
@@ -629,4 +629,205 @@ test('未分類のレポートがログの追加でタイムラインに移っ�
   const moved = d.querySelector('#tl .rep[data-rel="other.md"]');
   assert.ok(moved, 'other.md がタイムラインに移った（前提）');
   assertSameElement(d.activeElement, moved, '再描画後のフォーカス');
+});
+
+// ---------- 指摘 15: 状態の取得失敗 ----------
+
+const upd = (page) => page.document.getElementById('upd').innerHTML;
+const STATE_ERR = 'サーバーから取得できません';
+// /api/state だけ差し替える（レポートなどは起動中のサーバーへ）
+function stubState(page, respond) {
+  const realFetch = page.ctx.fetch;
+  page.ctx.fetch = (u) => u.startsWith('/api/state') ? respond(u) : realFetch(u);
+  return () => { page.ctx.fetch = realFetch; };
+}
+// 失敗の種類: 通信の失敗（サーバー停止・ネットワーク断で fetch が reject する）と、500（本文が internal error で JSON にならない）
+const STATE_FAILURES = {
+  '通信の失敗（fetch が reject）': () => Promise.reject(new TypeError('Failed to fetch')),
+  'サーバーが 500 を返す': () => Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve('internal error') }),
+  '200 だが本文が JSON にならない': () => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('<html>proxy error</html>') }),
+};
+
+test('状態の取得に失敗すると、#upd にエラー（.err）が出て、最後に表示できていたタイムラインは残る', async (t) => {
+  for (const [name, fail] of Object.entries(STATE_FAILURES)) {
+    await t.test(name, async () => {
+      const page = await renderedPage();
+      const d = page.document;
+      assert.ok(upd(page).includes('最終更新'), '成功時は最終更新が出ている（前提）');
+      const appBefore = d.getElementById('app').innerHTML;
+      stubState(page, fail);
+      await page.ctx.tick();
+      assert.match(upd(page), /<span class="err">[^<]*サーバーから取得できません[^<]*<\/span>/);
+      assert.equal(d.getElementById('app').innerHTML, appBefore, '#app は描き直さない');
+      assert.ok(d.querySelector('#tl table')?.isConnected, 'タイムラインが残っている');
+    });
+  }
+});
+
+test('取得に失敗した後、失敗前と同じ応答で復旧すると、エラー表示が消えて最終更新に戻る（同じページのまま）', async (t) => {
+  for (const [name, fail] of Object.entries(STATE_FAILURES)) {
+    await t.test(name, async () => {
+      const page = await renderedPage();
+      const before = upd(page);
+      assert.ok(before.includes('最終更新'), '成功時は最終更新が出ている（前提）');
+      const restore = stubState(page, fail);
+      await page.ctx.tick();
+      assert.ok(upd(page).includes(STATE_ERR), '失敗が出ている（前提）');
+      // meta.json は変えないので、復旧後の応答は失敗前とまったく同じ
+      restore();
+      await page.ctx.tick();
+      assert.ok(!upd(page).includes('class="err"'), upd(page));
+      assert.ok(!upd(page).includes(STATE_ERR), upd(page));
+      assert.equal(upd(page), before, '失敗前と同じ表示に戻る');
+      assert.ok(page.document.querySelector('#tl table')?.isConnected);
+    });
+  }
+});
+
+test('取得に失敗した後、run が 1 つも無い状態で復旧しても、エラー表示は残らない', async () => {
+  const page = await renderedPage();
+  const restore = stubState(page, STATE_FAILURES['通信の失敗（fetch が reject）']);
+  await page.ctx.tick();
+  assert.ok(upd(page).includes(STATE_ERR), '失敗が出ている（前提）');
+  restore();
+  // 復旧後の応答は run が無い状態（active: null）。この経路は #app だけを書き換える
+  stubState(page, () => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify({ active: null, runs: [], runsTotal: 0 })) }));
+  await page.ctx.tick();
+  assert.ok(!upd(page).includes(STATE_ERR), upd(page));
+  assert.ok(!upd(page).includes('class="err"'), upd(page));
+});
+
+test('run を選び直した後に、選び直す前の取得の失敗が遅れて届いても、#upd にエラーを出さない', async () => {
+  const page = await renderedPage();
+  // 1 回目（選び直す前）の取得だけ止めておき、後から失敗させる。2 回目以降は起動中のサーバーへ
+  let rejectOld; const held = new Promise((_, rej) => { rejectOld = rej; });
+  let calls = 0, newer = null;
+  const realFetch = page.ctx.fetch;
+  page.ctx.fetch = (u) => {
+    if (!u.startsWith('/api/state')) return realFetch(u);
+    calls++;
+    if (calls === 1) return held;
+    return (newer = realFetch(u));
+  };
+  const oldTick = page.ctx.tick();
+  page.ctx.selectRun(RUN);
+  assert.ok(newer, '選び直しで取得し直している（前提）');
+  await newer; await settle(); await settle();
+  assert.ok(upd(page).includes('最終更新'), '選び直した後の表示（前提）');
+  rejectOld(new TypeError('Failed to fetch'));
+  await oldTick;
+  assert.ok(!upd(page).includes(STATE_ERR), upd(page));
+  assert.ok(upd(page).includes('最終更新'), upd(page));
+});
+
+test('同じ run の取得が重なり、後から始めた取得が先に成功したら、先に始めた取得の失敗が遅れて届いても #upd にエラーを出さない', async () => {
+  const page = await renderedPage();
+  // 1 回目の取得だけ止めておき、2 回目（後から始めた取得）が成功した後に失敗させる
+  let rejectOld; const held = new Promise((_, rej) => { rejectOld = rej; });
+  let calls = 0;
+  const realFetch = page.ctx.fetch;
+  page.ctx.fetch = (u) => !u.startsWith('/api/state') ? realFetch(u) : ++calls === 1 ? held : realFetch(u);
+  const oldTick = page.ctx.tick();
+  await page.ctx.tick();
+  assert.ok(upd(page).includes('最終更新'), '後から始めた取得の成功（前提）');
+  rejectOld(new TypeError('Failed to fetch'));
+  await oldTick;
+  assert.ok(!upd(page).includes(STATE_ERR), upd(page));
+  assert.ok(upd(page).includes('最終更新'), upd(page));
+});
+
+test('先に始めた取得が成功した後に、後から始めた取得が失敗したら、#upd にエラーを出す', async () => {
+  const page = await renderedPage();
+  let rejectNew; const held = new Promise((_, rej) => { rejectNew = rej; });
+  let calls = 0;
+  const realFetch = page.ctx.fetch;
+  page.ctx.fetch = (u) => !u.startsWith('/api/state') ? realFetch(u) : ++calls === 2 ? held : realFetch(u);
+  const first = page.ctx.tick();
+  const second = page.ctx.tick();
+  await first;
+  rejectNew(new TypeError('Failed to fetch'));
+  await second;
+  assert.ok(upd(page).includes(STATE_ERR), upd(page));
+});
+
+test('同じ run の取得が重なり、後から始めた取得が先に失敗したら、先に始めた取得の成功が遅れて届いてもエラー表示を消さない', async () => {
+  const page = await renderedPage();
+  // 1 回目の取得だけ止めておき、2 回目（後から始めた取得）が失敗した後に成功させる
+  let releaseOld; const held = new Promise((res) => { releaseOld = res; });
+  let calls = 0, oldReq = null;
+  const realFetch = page.ctx.fetch;
+  page.ctx.fetch = (u) => {
+    if (!u.startsWith('/api/state')) return realFetch(u);
+    if (++calls === 1) return (oldReq = held.then(() => realFetch(u)));
+    return Promise.reject(new TypeError('Failed to fetch'));
+  };
+  const oldTick = page.ctx.tick();
+  await page.ctx.tick();
+  assert.ok(upd(page).includes(STATE_ERR), '後から始めた取得の失敗（前提）');
+  releaseOld();
+  await oldReq; await oldTick;
+  assert.ok(upd(page).includes(STATE_ERR), upd(page));
+});
+
+// ---------- 指摘 15: レポートの取得失敗 ----------
+
+const vbody = (page) => page.document.getElementById('vbody').textContent;
+
+test('レポートの取得に失敗すると、モーダルが開いて取得できなかったことを出す', async (t) => {
+  const cases = {
+    '通信の失敗（fetch が reject）': { respond: () => Promise.reject(new TypeError('Failed to fetch')), body: 'レポートを取得できません' },
+    'サーバーが 500 を返す': { respond: () => Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve('internal error') }), body: 'レポートを取得できません' },
+  };
+  for (const [name, c] of Object.entries(cases)) {
+    await t.test(name, async () => {
+      const page = await renderedPage();
+      const realFetch = page.ctx.fetch;
+      page.ctx.fetch = (u) => u.startsWith('/api/report') ? c.respond() : realFetch(u);
+      page.document.querySelector('#tl .rep[data-rel="plan.md"]').click();
+      await waitFor(() => page.viewer.open, 'モーダルが開く');
+      assert.equal(page.viewer.isModal, true);
+      assert.equal(title(page), 'plan.md');
+      assert.equal(vbody(page), c.body);
+    });
+  }
+});
+
+test('レポートが無い（サーバーが 404 を返す）と、本文の not found をレポートとして出さず、見つからないことを出す', async () => {
+  const page = await renderedPage();
+  await page.ctx.openReport('missing.md');
+  assert.equal(page.viewer.open, true, 'モーダルが開く');
+  assert.equal(title(page), 'missing.md');
+  assert.equal(vbody(page), 'レポートが見つかりません');
+});
+
+test('レポートの取得を待つ間に別の判定を開いたら、遅れて届いた取得の失敗で中身を上書きしない', async () => {
+  const page = await renderedPage();
+  const d = page.document;
+  let rejectOld; const held = new Promise((_, rej) => { rejectOld = rej; });
+  const realFetch = page.ctx.fetch;
+  page.ctx.fetch = (u) => u.startsWith('/api/report') ? held : realFetch(u);
+  press(page, d.querySelector('#tl .rep[data-rel="plan.md"]'), 'Enter');
+  press(page, d.querySelector('#tl .judge[data-ji]'), 'Enter');
+  assert.equal(title(page), 'plan の判定（iter 1）', '判定を開いた（前提）');
+  const bodyBefore = vbody(page);
+  rejectOld(new TypeError('Failed to fetch'));
+  await held.catch(() => {}); await settle(); await settle();
+  assert.equal(title(page), 'plan の判定（iter 1）', '古い取得の失敗で上書きされない');
+  assert.equal(vbody(page), bodyBefore);
+});
+
+// ---------- 指摘 16: タスクキューのパスの表示 ----------
+
+test('タスクキューの見出しは、サーバーが返した tasksPath をそのまま出す（画面側で /Users/ を ~ に置き換えない）', async (t) => {
+  // 短縮はサーバー側（HOME 基準）で済んでいる。HOME の外の /Users/<別のユーザー>/... や、Linux の /home/... も受け取ったまま出す
+  const cases = ['/Users/someone/repo/.takt/tasks.yaml', '/home/someone/repo/.takt/tasks.yaml', '~/repo/.takt/tasks.yaml'];
+  const realState = await (await fetch(server.base + '/api/state?run=' + encodeURIComponent(RUN))).text();
+  for (const tasksPath of cases) {
+    await t.test(tasksPath, async () => {
+      const page = await renderedPage();
+      stubState(page, () => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify({ ...JSON.parse(realState), tasksPath })) }));
+      await page.ctx.tick();
+      assert.ok(page.document.getElementById('app').innerHTML.includes('<h2>タスクキュー — ' + tasksPath + '</h2>'), page.document.getElementById('app').innerHTML.match(/<h2>タスクキュー[^<]*<\/h2>/)?.[0]);
+    });
+  }
 });
