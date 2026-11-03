@@ -656,6 +656,23 @@ test('未分類のレポートがログの追加でタイムラインに移っ�
   assertSameElement(d.activeElement, moved, '再描画後のフォーカス');
 });
 
+test('選択が空のまま始まった 2 件目の取得が、1 件目の自動選択の後に別の run を返しても、表示を上書きしない', async () => {
+  // 別の run（B）の応答を先に用意しておく（loadPage の後に await を挟むと、その間に 1 件目が終わって自動選択が済んでしまう）
+  const stateB = JSON.parse(await (await fetch(server.base + '/api/state')).text());
+  stateB.active.runDir = '/B'; stateB.active.meta = { ...stateB.active.meta, runSlug: '20261029-100000-bbbb' };
+  // 読み込み時の tick（選択は空）が走っている間に 2 件目の tick を始める。2 件目の応答だけ止めておき、B を返す
+  const page = loadPage();
+  let release; const held = new Promise((r) => { release = r; });
+  const realFetch = page.ctx.fetch;
+  page.ctx.fetch = (u) => u.startsWith('/api/state') ? held.then(() => ({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(stateB)) })) : realFetch(u);
+  const second = page.ctx.tick();
+  await waitFor(() => page.document.querySelector('#tl table'), '1 件目の描画');
+  assert.ok(page.document.getElementById('app').innerHTML.includes('a11y'), '1 件目で run A が自動選択されて表示される（前提）');
+  release(); await second; await settle();
+  assert.ok(!page.document.getElementById('app').innerHTML.includes('bbbb'), '選択が空のときに始めた 2 件目の応答（run B）で表示を上書きしない');
+  page.ctx.fetch = realFetch;
+});
+
 // ---------- 指摘 15: 状態の取得失敗 ----------
 
 const upd = (page) => page.document.getElementById('upd').innerHTML;

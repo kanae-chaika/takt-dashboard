@@ -244,6 +244,7 @@ async function tick(){
     raw = await res.text();
   } catch { if (gen === selGen && seq > shownSeq) { shownSeq = seq; showStateError(); } return; } // 古い世代の失敗・後から始めた取得の結果より前の失敗は、その後の表示を上書きしないよう捨てる
   if (gen !== selGen) return; // 応答待ちの間に選択を変えられたら古い応答は捨てる（後から届いて選んだ run の表示や選択を上書きしないように）
+  if (reqRun !== selectedRun) return; // 選択が空のまま始めた取得が、自動選択の後に届いたら捨てる（表示と選択中の run が食い違わないように。次の tick で選択中の run を取り直す）
   if (seq < shownSeq) return; // 後から始めた取得の結果（失敗のエラー表示を含む）を、先に始めた取得の古い応答で上書きしない
   shownSeq = seq;
   if (raw === lastRaw) {
