@@ -240,13 +240,13 @@ class FakeDocument {
 const cssEscape = (s) => String(s).replace(/^(\d)|[^\w-]/g, (m, d) => d !== undefined ? '\\' + d.charCodeAt(0).toString(16) + ' ' : '\\' + m);
 
 // / の HTML を読み込んだ 1 枚のページ。<script> を vm で実行し、/api/state と /api/report は起動中のサーバーに取りに行く
-function loadPage() {
+function loadPage(localStorage = { getItem: () => null, setItem() {}, removeItem() {} }) { // localStorage は、保存済みの値がある状態を作るテストだけ差し替える
   const bodyHtml = HTML.match(/<body>([\s\S]*?)<script>/)[1];
   const document = new FakeDocument(bodyHtml);
   const ctx = {
     document, console, URLSearchParams, CSS: { escape: cssEscape },
     location: { search: '', pathname: '/' }, history: { replaceState() {} },
-    localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    localStorage,
     fetch: (u) => fetch(server.base + u),
     // 2 秒ごとの tick はテストが rerender() で明示的に呼ぶ
     setInterval: () => 0, setTimeout,
@@ -945,6 +945,18 @@ test('高さを変えるバーは Tab でフォーカスでき、名前・role�
   assert.equal(rz.getAttribute('aria-valuenow'), '460');
   rz.focus();
   assertSameElement(page.document.activeElement, rz);
+});
+
+// 上限が無かった版で保存した値や、手で書き換えた値が読み込まれても、aria-valuemax / aria-valuemin の範囲に収める
+test('保存済みの高さが範囲外でも、読み込み時に 180〜2000 に収める', async (t) => {
+  for (const [saved, expected] of [['5000', '2000'], ['50', '180'], ['600', '600']]) {
+    await t.test('保存値 ' + saved + ' → ' + expected, async () => {
+      const page = loadPage({ getItem: (k) => (k === 'tlH' ? saved : null), setItem() {}, removeItem() {} });
+      await waitFor(() => page.document.querySelector('#tl table'), '最初の描画');
+      assert.deepEqual(rowHeights(page), [expected + 'px', expected + 'px']);
+      assert.equal(page.document.getElementById('tlrz').getAttribute('aria-valuenow'), expected);
+    });
+  }
 });
 
 test('高さを変えるバーで ↓ / ↑ を押すと 20px ずつ変わり（下限 180・上限 2000）、マウスと同じく保存して経路を描き直す。スクロールは止める', async () => {

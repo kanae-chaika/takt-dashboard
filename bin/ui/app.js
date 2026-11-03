@@ -44,11 +44,12 @@ function openJudge(r){
 }
 // ---------- タイムラインの高さ（下端のバーをドラッグ。localStorage に保存） ----------
 // 上段（実行中のタスク + タイムライン）は一体で、下のバーをドラッグすると両方の高さが変わる。経路はそれに合わせて上下する
-let TL_H = 460; try { TL_H = Number(localStorage.getItem('tlH')) || 460; } catch {}
 // 高さの範囲。下限はタイムラインの見出しと数行が残る高さ。上限は aria-valuemax のために決めたもの（省略すると 100 と解釈され、既定の 460 が範囲外になる）で、
 // ドラッグ・キー操作とも同じ値で止める
 const TL_H_MIN = 180, TL_H_MAX = 2000;
 const clampRowH = (h) => Math.min(TL_H_MAX, Math.max(TL_H_MIN, h));
+// 保存済みの値も範囲に収める（上限が無かった版で保存した大きな値や、手で書き換えた値が aria-valuemax を超えないように）
+let TL_H = 460; try { TL_H = clampRowH(Number(localStorage.getItem('tlH')) || 460); } catch {}
 function applyRowH(){
   for (const el of document.querySelectorAll('section.toprow')) el.style.height = TL_H + 'px'; const tl = document.getElementById('tl'); if (tl) tl.style.height = (TL_H - 62) + 'px';
   const rz = document.getElementById('tlrz'); if (rz) { rz.setAttribute('aria-valuenow', String(TL_H)); rz.setAttribute('aria-valuetext', TL_H + 'px'); } // 読み上げに今の高さを伝える
