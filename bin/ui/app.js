@@ -16,12 +16,14 @@ function pm(r){
   const t = r.source==='log' ? '' : ' title="実行ログに記録が無いため設定（'+escA(r.source)+'）からの推定"'; return '<span'+t+'>'+cur+'</span>';
 }
 function repLinks(r){ return (r.reports||[]).map(rel => '<button type="button" class="rep" data-rel="'+escA(rel)+'">'+esc(rel.split('/').pop())+'</button>').join(' '); }
+// 判定ラベルの色分け。タイムライン・タスク欄のボタンと経路のノードで同じ分類にする（needs_fix は takt の「修正が要る」判定なので reject と同じ赤）
+const judgeClass = (label) => /^approve/i.test(label) ? 'j-approved' : /^(reject|needs_fix)/i.test(label) ? 'j-rejected' : '';
 // 判定結果のラベル（rule 名そのまま）。クリックで judge の reason を開く。ラベルが無く stage だけある場合は「判定」
 function judgeLink(r, i){
   if ((!r.judge || (!r.judge.label && !r.judge.stages.length)) && r.errors && r.errors.length) return '<button type="button" class="judge j-rejected" data-ei="'+i+'" title="クリックでエラーの内容を表示">エラー</button>';
   if (!r.judge || (!r.judge.label && !r.judge.stages.length)) return '';
   const label = r.judge.label || '判定ログ';
-  const cls = /^approve/i.test(label) ? 'j-approved' : /^reject/i.test(label) ? 'j-rejected' : '';
+  const cls = judgeClass(label);
   return '<button type="button" class="judge '+cls+'" data-ji="'+i+'" title="'+escA(label)+'（クリックで判定理由を表示）">'+esc(label)+'</button>';
 }
 function openJudge(r){
@@ -87,7 +89,7 @@ function pathModel(tl, meta){
 function cardHtml(n, big, edge=''){ // edge: 経路の端の印（' first' / ' last'）。端のポートを出さないために使う
   const j = n.ji>=0 ? ' has-j" role="button" tabindex="0" data-ji="'+n.ji : ''; // 判定を開けるノードだけキーボードで操作できるようにする
   const t = ' title="'+escA((n.ts?jst(n.ts):'')+(n.tsEnd?' → '+jst(n.tsEnd):''))+'"';
-  const jc = n.label ? (/^approve/i.test(n.label) ? ' j-approved' : /^(reject|needs_fix)/i.test(n.label) ? ' j-rejected' : '') : '';
+  const jc = n.label && judgeClass(n.label) ? ' ' + judgeClass(n.label) : '';
   const label = n.label ? '<span class="jl'+jc+'" title="'+escA(n.label)+'">'+esc(n.label)+'</span>' : (n.reason ? '<span class="jl">'+esc(n.reason)+'</span>' : '<span class="muted">'+esc(n.status ?? (n.cls==='run'?'実行中':''))+'</span>');
   return '<div class="node st-'+n.cls+edge+j+'"'+t+'><span class="port prev"></span><span class="port next"></span>'
     + '<div class="nm">'+esc(n.name)+(big && n.workflow && n.workflow!=='default' ? ' <span class="wf">['+esc(n.workflow)+']</span>' : '')+(big && n.iter ? ' <span class="wf">· '+esc(n.iter)+'/'+(MAX ?? '?')+'</span>' : '')+'</div>'

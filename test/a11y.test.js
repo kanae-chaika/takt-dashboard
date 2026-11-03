@@ -359,6 +359,23 @@ test('経路のノードは、判定があるもの（.node.has-j）だけ role=
   assert.equal(withoutJudge[0].hasAttribute('role'), false);
 });
 
+// 判定ラベルの色分けは 3 か所（タイムライン・タスク欄の最終判定・経路のノード）で同じにする。
+// fixture の approved を needs_fix に差し替えた応答を返し、経路だけが赤になる（以前の挙動）ことが無いのを確かめる
+test('needs_fix の判定は、経路のノードと同じく、タイムラインとタスク欄のボタンも赤（j-rejected）になる', async () => {
+  const page = await renderedPage();
+  const real = await (await fetch(server.base + '/api/state')).text();
+  assert.ok(real.includes('"label":"approved"'), '前提: fixture の plan の判定は approved');
+  const needsFix = real.replaceAll('"label":"approved"', '"label":"needs_fix"');
+  stubState(page, () => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(needsFix) }));
+  await page.ctx.tick();
+  for (const sel of ['#tl .judge[data-ji]', 'section.c2 .judge[data-ji]', '#path .node.has-j .jl']) {
+    const el = page.document.querySelector(sel);
+    assert.ok(el, sel);
+    assert.match(el.getAttribute('title'), /^needs_fix/, sel + ' のラベル'); // FakeDocument の textContent は innerHTML の中の文字を返さないので title で見る
+    assert.ok(el.classList.contains('j-rejected'), sel + ' の class: ' + el.className);
+  }
+});
+
 test('クリックで、レポート・判定・エラーがモーダル表示（showModal）で開き、表示内容は今までどおり', async (t) => {
   const cases = [
     { name: 'タイムラインのレポート', sel: '#tl .rep[data-rel="plan.md"]', title: 'plan.md', body: 'plan のレポート\n' },
