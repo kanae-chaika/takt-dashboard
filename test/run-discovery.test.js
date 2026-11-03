@@ -24,10 +24,10 @@ const BR_RUN = path.join(BR_REPO, '.takt', 'runs', '20261029-100000-br');
 const BR_WT = path.join(ROOT, 'br-wt');
 const BR_WT_RUN = path.join(BR_WT, '.takt', 'runs', '20261029-110000-brwt');
 
-// roots の区切り: a と、: を含む x:y の 2 つ
+// roots の区切り: a と、: を含む x:y の 2 つ。Windows ではディレクトリ名に : を使えないので x-y にする（パスのドライブ指定 C:\… に : が入るので、分けないことは同じく確かめられる）
 const SPLIT = path.join(ROOT, 'split');
 const SPLIT_A = path.join(SPLIT, 'a');
-const SPLIT_COLON = path.join(SPLIT, 'x:y');
+const SPLIT_COLON = path.join(SPLIT, process.platform === 'win32' ? 'x-y' : 'x:y');
 const A_RUN = path.join(SPLIT_A, 'repo-a', '.takt', 'runs', '20261029-120000-a');
 const COLON_RUN = path.join(SPLIT_COLON, 'repo-c', '.takt', 'runs', '20261029-130000-c');
 const HOME_CFG = path.join(ROOT, 'home-cfg'); // config.yaml に roots を書く HOME
