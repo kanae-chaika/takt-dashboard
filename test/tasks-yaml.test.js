@@ -65,6 +65,17 @@ const MULTI_TASK = `  - summary: |-
     run_slug: ${MULTI_SLUG}
     worktree_path: ${WT_MULTI}`;
 
+// 値が空のキー（先頭の branch と、4 スペース字下げの summary）のあるタスク。空の値に次の行のキーと値を入れない
+const WT_EMPTY = path.join(ROOT, 'wt-empty');
+const EMPTY_SLUG = '20261103-130000-empty';
+const EMPTY_RUN = path.join(WT_EMPTY, '.takt', 'runs', EMPTY_SLUG);
+const EMPTY_TASK = `  - branch:
+    name: empty
+    summary:
+    status: completed
+    run_slug: ${EMPTY_SLUG}
+    worktree_path: ${WT_EMPTY}`;
+
 function writeRun(runDir, slug) {
   fs.mkdirSync(runDir, { recursive: true });
   // workflow は入れない（maxStepsFor が PATH 上の takt を探しに行かないように）。completed なので中断判定は走らない
@@ -82,7 +93,8 @@ before(async () => {
   for (const key of FIRST_KEYS) writeRun(runOf(key), slugOf(key));
   writeRun(TAKT_RUN, TAKT_SLUG);
   writeRun(MULTI_RUN, MULTI_SLUG);
-  const yaml = ['tasks:', ...FIRST_KEYS.map(taskYaml), TAKT_TASK, MULTI_TASK].join('\n') + '\n';
+  writeRun(EMPTY_RUN, EMPTY_SLUG);
+  const yaml = ['tasks:', ...FIRST_KEYS.map(taskYaml), TAKT_TASK, MULTI_TASK, EMPTY_TASK].join('\n') + '\n';
   fs.writeFileSync(path.join(REPO, '.takt', 'tasks.yaml'), yaml);
   server = await startDashboard({ cwd: REPO, home: HOME });
 });
@@ -118,4 +130,9 @@ test('先頭キーが複数行のブロックスカラーでも、継続行ま�
   assert.equal(t?.name, 'multi');
   // summary は見出しの記号を外した 1 行目（parseTasks の summary の扱い。継続行は空白でつながる）
   assert.equal(t?.summary, '見出し 本文');
+});
+
+test('値が空のキーは、先頭キーでも 2 つ目以降のキーでも空のまま読み、次の行を値にしない', async () => {
+  const t = (await getState(runParam(EMPTY_RUN))).currentTask;
+  assert.deepEqual({ branch: t?.branch, name: t?.name, summary: t?.summary, status: t?.status }, { branch: '', name: 'empty', summary: '', status: 'completed' });
 });
