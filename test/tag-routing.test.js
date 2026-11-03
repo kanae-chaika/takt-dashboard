@@ -66,6 +66,12 @@ steps:
           tags: [nosuch]
         - name: multi-review
           tags: [nosuch, review]
+        - tags: [coding] # name: が最初のキーでない（YAML のキー順に意味は無い）
+          name: late-name-review
+        - description: 説明が先
+          name: desc-first-review
+          tags:
+            - review
     rules:
       - condition: all("approved")
         next: fix
@@ -125,7 +131,7 @@ function writeRun(slug, { workflow, parentWorkflow = workflow, parentStep = 'rev
 
 // run の定義。before() で writeRun に渡して作る
 const RUN_DEFS = {
-  tag: ['20261101-100000-tag', { workflow: 'tagwf', subs: [['arch-review', 'tagwf'], ['flow-review', undefined], ['pinned-review', 'tagwf'], ['untagged-review', 'tagwf'], ['unknown-tag-review', 'tagwf'], ['multi-review', 'tagwf']] }],
+  tag: ['20261101-100000-tag', { workflow: 'tagwf', subs: [['arch-review', 'tagwf'], ['flow-review', undefined], ['pinned-review', 'tagwf'], ['untagged-review', 'tagwf'], ['unknown-tag-review', 'tagwf'], ['multi-review', 'tagwf'], ['late-name-review', 'tagwf'], ['desc-first-review', 'tagwf']] }],
   // reviewers 自身を並列の子の行として出すため、親の step_start は別の名前にする
   parent: ['20261101-100600-parent', { workflow: 'tagwf', parentStep: 'outer', subs: [['reviewers', 'tagwf']] }],
   // 子のワークフロー（e.workflow）が run のワークフロー（meta.workflow）と違う run。子の行は e.workflow の yaml から引く
@@ -200,6 +206,20 @@ test('step の tag が targets.tags に無いときは既定の profile にな�
 
 test('step の tag のうち targets.tags に無いものは飛ばし、あるものの profile を使う', async () => {
   assert.deepEqual(await subPm(RUN_TAG, 'multi-review'), { provider: 'codex', model: 'gpt-5', source: 'runtime.yaml' });
+});
+
+test('step の name: が最初のキーでなくても（tags: や description: が先でも）step と認識し、tag の profile を使う', async () => {
+  assert.deepEqual(await subPm(RUN_TAG, 'late-name-review'), { provider: 'opencode', model: 'big', source: 'runtime.yaml' });
+  assert.deepEqual(await subPm(RUN_TAG, 'desc-first-review'), { provider: 'codex', model: 'gpt-5', source: 'runtime.yaml' });
+});
+
+test('routing の控えは一時ファイルに書いてから置き換える（.tmp が残らず、控えは JSON として読めて stepTags を含む）', async () => {
+  await subPm(RUN_TAG, 'arch-review');
+  const names = fs.readdirSync(SNAP_DIR);
+  assert.ok(!names.some((n) => n.endsWith('.tmp')), '.tmp が残っていない: ' + names.join(', '));
+  const snap = JSON.parse(fs.readFileSync(path.join(SNAP_DIR, path.basename(RUN_TAG) + '.json'), 'utf8'));
+  assert.deepEqual(snap.stepTags.tagwf['arch-review'], ['review']);
+  assert.deepEqual(snap.stepTags.tagwf['late-name-review'], ['coding']);
 });
 
 test('並列の子の tags: を親の step の tag として拾わない', async () => {

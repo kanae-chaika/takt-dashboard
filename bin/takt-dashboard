@@ -7,7 +7,7 @@
 // データ元は run ディレクトリの logs/*.jsonl・meta.json・reports/。provider/model が無い並列サブステップは
 // ~/.takt/runtime.yaml（無ければ config.yaml）から引く。
 import { createServer } from 'node:http';
-import { readFileSync, readdirSync, existsSync, statSync, realpathSync, mkdirSync, writeFileSync, writeSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync, realpathSync, mkdirSync, writeFileSync, writeSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -200,9 +200,11 @@ function routingHistory() {
   return { rt, cf, runtimeSince };
 }
 const snapPath = (runDir) => path.join(SNAP_DIR, path.basename(runDir) + '.json');
-// 控えの書き込みはここだけで行う（routingFor の初回保存と stepTagsFor の書き足しで形式を揃える）。書けなくても表示は続ける
+// 控えの書き込みはここだけで行う（routingFor の初回保存と stepTagsFor の書き足しで形式を揃える）。書けなくても表示は続ける。
+// 一時ファイルに書いてから rename で置き換える。書き込みの途中で落ちて控えが壊れると、次回は run 開始時の設定を復元できず現在の設定に置き換わってしまうため
 function saveRouting(runDir, routing) {
-  try { mkdirSync(SNAP_DIR, { recursive: true }); writeFileSync(snapPath(runDir), JSON.stringify(routing, null, 1)); } catch {}
+  const target = snapPath(runDir), tmp = target + '.' + process.pid + '.tmp';
+  try { mkdirSync(SNAP_DIR, { recursive: true }); writeFileSync(tmp, JSON.stringify(routing, null, 1)); renameSync(tmp, target); } catch {}
 }
 function routingFor(runDir, startTime) {
   const snap = snapPath(runDir);
@@ -472,8 +474,9 @@ function maxStepsFor(workflow, root) {
   return null;
 }
 // workflow yaml のトップレベルの steps: の下にある step（並列の子を含む）の tags: を { step 名: [tag, …] } で返す。
-// tags: は step の「- name:」の 2 字下げ先のキーだけを見る（もっと深い字下げにある並列の子の tags: を親の tag として拾わないため）。
-// 書き方はブロック形式（tags: の次の行から - review）とフロー形式（tags: [review]）の両方が takt の builtins にある
+// step は steps: 配下の配列要素（- で始まる塊）。YAML のキー順に意味は無く name: が最初とは限らないので、
+// 要素の直下（- の 2 字下げ先）に並ぶキーから name: と tags: を取る。もっと深い字下げにある並列の子の name: / tags: は親のものとして拾わない。
+// tags: の書き方はブロック形式（tags: の次の行から - review）とフロー形式（tags: [review]）の両方が takt の builtins にある
 function stepTagsIn(text) {
   const out = {};
   const lines = text.split('\n').map((l) => l.replace(/#.*$/, '').trimEnd());
@@ -484,25 +487,32 @@ function stepTagsIn(text) {
   const indentOf = (l) => l.match(/^\s*/)[0].length;
   const unquote = (v) => v.trim().replace(/^['"]|['"]$/g, '');
   for (let i = start + 1; i < end; i++) {
-    const m = lines[i].match(/^(\s*)-\s+name:\s*['"]?([\w.-]+)['"]?\s*$/);
-    if (!m || Object.hasOwn(out, m[2])) continue; // 同じ名前の step が複数あれば最初のもの
+    const m = lines[i].match(/^(\s*)-\s+\S/);
+    if (!m) continue;
     const d = m[1].length;
-    const tags = [];
-    for (let j = i + 1; j < end && (!lines[j].trim() || indentOf(lines[j]) > d); j++) {
-      const t = lines[j].match(/^(\s*)tags:\s*(.*)$/);
-      if (!t || t[1].length !== d + 2) continue;
-      if (t[2].trim()) tags.push(...t[2].trim().replace(/^\[|\]$/g, '').split(',').map(unquote).filter(Boolean));
-      else {
-        for (let k = j + 1; k < end; k++) {
-          if (!lines[k].trim()) continue;
-          const x = lines[k].match(/^(\s*)-\s*(.+)$/);
-          if (!x || x[1].length < d + 2) break; // step の外（次の step など）に出たら終わり
-          tags.push(unquote(x[2]));
+    // 要素の本文。先頭行は「- 」を字下げに置き換えて、2 行目以降のキーと同じ字下げ（d + 2）で扱う
+    const body = [lines[i].replace(/^(\s*)-\s/, '$1  ')];
+    let j = i + 1;
+    for (; j < end && (!lines[j].trim() || indentOf(lines[j]) > d); j++) body.push(lines[j]);
+    let name = null; const tags = [];
+    for (let k = 0; k < body.length; k++) {
+      if (!body[k].trim() || indentOf(body[k]) !== d + 2) continue;
+      let x;
+      if ((x = body[k].match(/^\s*name:\s*(.+)$/))) name = unquote(x[1]);
+      else if ((x = body[k].match(/^\s*tags:\s*(.*)$/))) {
+        if (x[1].trim()) tags.push(...x[1].trim().replace(/^\[|\]$/g, '').split(',').map(unquote).filter(Boolean));
+        else {
+          for (let q = k + 1; q < body.length; q++) {
+            if (!body[q].trim()) continue;
+            const y = body[q].match(/^(\s*)-\s*(.+)$/);
+            if (!y || y[1].length < d + 2) break; // tags: の項目でない行（次のキーなど）が来たら終わり
+            tags.push(unquote(y[2]));
+          }
         }
       }
-      break;
     }
-    out[m[2]] = tags;
+    if (name && /^[\w.-]+$/.test(name) && !Object.hasOwn(out, name)) out[name] = tags; // 同じ名前の step が複数あれば最初のもの
+    // 本文は読み飛ばさない。並列の子（parallel: の下の - name:）も本文の中にある要素なので、次の周で同じように見る
   }
   return out;
 }
