@@ -240,13 +240,13 @@ class FakeDocument {
 const cssEscape = (s) => String(s).replace(/^(\d)|[^\w-]/g, (m, d) => d !== undefined ? '\\' + d.charCodeAt(0).toString(16) + ' ' : '\\' + m);
 
 // / の HTML を読み込んだ 1 枚のページ。<script> を vm で実行し、/api/state と /api/report は起動中のサーバーに取りに行く
-function loadPage() {
+function loadPage(localStorage = { getItem: () => null, setItem() {}, removeItem() {} }) { // localStorage は、保存済みの値がある状態を作るテストだけ差し替える
   const bodyHtml = HTML.match(/<body>([\s\S]*?)<script>/)[1];
   const document = new FakeDocument(bodyHtml);
   const ctx = {
     document, console, URLSearchParams, CSS: { escape: cssEscape },
     location: { search: '', pathname: '/' }, history: { replaceState() {} },
-    localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    localStorage,
     fetch: (u) => fetch(server.base + u),
     // 2 秒ごとの tick はテストが rerender() で明示的に呼ぶ
     setInterval: () => 0, setTimeout,
@@ -357,6 +357,23 @@ test('経路のノードは、判定があるもの（.node.has-j）だけ role=
   assert.equal(withJudge[0].getAttribute('tabindex'), '0');
   assert.equal(withoutJudge[0].hasAttribute('tabindex'), false);
   assert.equal(withoutJudge[0].hasAttribute('role'), false);
+});
+
+// 判定ラベルの色分けは 3 か所（タイムライン・タスク欄の最終判定・経路のノード）で同じにする。
+// fixture の approved を needs_fix に差し替えた応答を返し、経路だけが赤になる（以前の挙動）ことが無いのを確かめる
+test('needs_fix の判定は、経路のノードと同じく、タイムラインとタスク欄のボタンも赤（j-rejected）になる', async () => {
+  const page = await renderedPage();
+  const real = await (await fetch(server.base + '/api/state')).text();
+  assert.ok(real.includes('"label":"approved"'), '前提: fixture の plan の判定は approved');
+  const needsFix = real.replaceAll('"label":"approved"', '"label":"needs_fix"');
+  stubState(page, () => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(needsFix) }));
+  await page.ctx.tick();
+  for (const sel of ['#tl .judge[data-ji]', 'section.c2 .judge[data-ji]', '#path .node.has-j .jl']) {
+    const el = page.document.querySelector(sel);
+    assert.ok(el, sel);
+    assert.match(el.getAttribute('title'), /^needs_fix/, sel + ' のラベル'); // FakeDocument の textContent は innerHTML の中の文字を返さないので title で見る
+    assert.ok(el.classList.contains('j-rejected'), sel + ' の class: ' + el.className);
+  }
 });
 
 test('クリックで、レポート・判定・エラーがモーダル表示（showModal）で開き、表示内容は今までどおり', async (t) => {
@@ -872,4 +889,124 @@ test('タスクキューの見出しは、サーバーが返した tasksPath を
       assert.ok(page.document.getElementById('app').innerHTML.includes('<h2>タスクキュー — ' + tasksPath + '</h2>'), page.document.getElementById('app').innerHTML.match(/<h2>タスクキュー[^<]*<\/h2>/)?.[0]);
     });
   }
+});
+
+// ---------- レポートは表示中の run から取る ----------
+
+// run を選び直すと selectedRun は描き直す前に変わる。画面に残っている（前の run の）ボタンからは、その画面の run のレポートを取る
+test('run を選び直した後、新しい画面を描く前・状態の取得に失敗して前の画面が残っているときも、レポートは表示中の run から取る', async (t) => {
+  const cases = {
+    '新しい run の状態を取得中（描き直す前）': () => new Promise(() => {}),
+    '新しい run の状態の取得に失敗（前の画面が残る）': () => Promise.reject(new TypeError('Failed to fetch')),
+  };
+  for (const [name, respond] of Object.entries(cases)) {
+    await t.test(name, async () => {
+      const page = await renderedPage();
+      const reportUrls = [];
+      const realFetch = page.ctx.fetch;
+      page.ctx.fetch = (u) => {
+        if (u.startsWith('/api/state')) return respond(u);
+        if (u.startsWith('/api/report')) reportUrls.push(u);
+        return realFetch(u);
+      };
+      const btn = page.document.querySelector('#tl .rep[data-rel="plan.md"]');
+      page.ctx.selectRun('/B');
+      await settle(); await settle();
+      assert.ok(btn.isConnected, '前の画面が残っている（前提）');
+      press(page, btn, 'Enter');
+      await waitFor(() => page.viewer.open, 'モーダルが開く');
+      assert.equal(reportUrls.length, 1);
+      assert.ok(reportUrls[0].includes('&run=' + encodeURIComponent(RUN)), reportUrls[0]);
+      assert.equal(vbody(page), 'plan のレポート\n');
+      page.ctx.fetch = realFetch;
+    });
+  }
+});
+
+// ---------- 上段の高さを変えるバー（#tlrz）のキーボード操作 ----------
+
+// localStorage への書き込みを記録する（読み込み時の高さは既定の 460）
+function recordStorage(page) {
+  const calls = [];
+  page.ctx.localStorage = { getItem: () => null, setItem: (k, v) => calls.push(['set', k, v]), removeItem: (k) => calls.push(['remove', k]) };
+  return calls;
+}
+const rowHeights = (page) => page.document.querySelectorAll('section.toprow').map((el) => el.style.height);
+
+test('高さを変えるバーは Tab でフォーカスでき、名前・role・今の高さを持つ', async () => {
+  const page = await renderedPage();
+  const rz = page.document.getElementById('tlrz');
+  assert.equal(rz.getAttribute('tabindex'), '0');
+  assert.equal(rz.getAttribute('role'), 'separator');
+  assert.equal(rz.getAttribute('aria-orientation'), 'horizontal');
+  assert.ok(rz.getAttribute('aria-label'));
+  assert.equal(rz.getAttribute('aria-valuemin'), '180');
+  assert.equal(rz.getAttribute('aria-valuemax'), '2000'); // 省略すると 100 と解釈され、既定の 460 が範囲外になる
+  assert.equal(rz.getAttribute('aria-valuenow'), '460');
+  rz.focus();
+  assertSameElement(page.document.activeElement, rz);
+});
+
+// 上限が無かった版で保存した値や、手で書き換えた値が読み込まれても、aria-valuemax / aria-valuemin の範囲に収める
+test('保存済みの高さが範囲外でも、読み込み時に 180〜2000 に収める', async (t) => {
+  for (const [saved, expected] of [['5000', '2000'], ['50', '180'], ['600', '600']]) {
+    await t.test('保存値 ' + saved + ' → ' + expected, async () => {
+      const page = loadPage({ getItem: (k) => (k === 'tlH' ? saved : null), setItem() {}, removeItem() {} });
+      await waitFor(() => page.document.querySelector('#tl table'), '最初の描画');
+      // 最初の描画の高さは style 属性で決まる（FakeDocument は style 属性を .style に反映しない）
+      assert.deepEqual(page.document.querySelectorAll('section.toprow').map((el) => el.getAttribute('style')), ['height:' + expected + 'px', 'height:' + expected + 'px']);
+      assert.equal(page.document.getElementById('tlrz').getAttribute('aria-valuenow'), expected);
+    });
+  }
+});
+
+test('高さを変えるバーで ↓ / ↑ を押すと 20px ずつ変わり（下限 180・上限 2000）、マウスと同じく保存して経路を描き直す。スクロールは止める', async () => {
+  const page = await renderedPage();
+  const calls = recordStorage(page);
+  const d = page.document;
+  d.querySelector('#path svg.edges').removeAttribute('width');
+  const ev = press(page, d.getElementById('tlrz'), 'ArrowDown');
+  assert.equal(ev.defaultPrevented, true);
+  assert.deepEqual(rowHeights(page), ['480px', '480px']);
+  assert.equal(d.getElementById('tl').style.height, '418px');
+  assert.equal(d.getElementById('tlrz').getAttribute('aria-valuenow'), '480');
+  assert.deepEqual(calls.at(-1), ['set', 'tlH', '480']);
+  assert.ok(d.querySelector('#path svg.edges').hasAttribute('width'), '経路の線を描き直した');
+  for (let i = 0; i < 30; i++) press(page, d.getElementById('tlrz'), 'ArrowUp');
+  assert.deepEqual(rowHeights(page), ['180px', '180px']);
+  assert.equal(d.getElementById('tlrz').getAttribute('aria-valuenow'), '180');
+  assert.deepEqual(calls.at(-1), ['set', 'tlH', '180']);
+  for (let i = 0; i < 120; i++) press(page, d.getElementById('tlrz'), 'ArrowDown'); // 180 + 20 × 91 = 2000 で止まる
+  assert.deepEqual(rowHeights(page), ['2000px', '2000px']);
+  assert.equal(d.getElementById('tlrz').getAttribute('aria-valuenow'), '2000');
+  assert.deepEqual(calls.at(-1), ['set', 'tlH', '2000']);
+});
+
+test('高さを変えるバーで Enter を押すと、ダブルクリックと同じく既定の高さ（460）に戻し、保存した高さを消す', async () => {
+  const page = await renderedPage();
+  const calls = recordStorage(page);
+  const d = page.document;
+  press(page, d.getElementById('tlrz'), 'ArrowDown');
+  d.querySelector('#path svg.edges').removeAttribute('width');
+  const ev = press(page, d.getElementById('tlrz'), 'Enter');
+  assert.equal(ev.defaultPrevented, true);
+  assert.deepEqual(rowHeights(page), ['460px', '460px']);
+  assert.equal(d.getElementById('tlrz').getAttribute('aria-valuenow'), '460');
+  assert.deepEqual(calls.at(-1), ['remove', 'tlH']);
+  assert.ok(d.querySelector('#path svg.edges').hasAttribute('width'), '経路の線を描き直した');
+});
+
+test('高さを変えるバーにフォーカスがあるときに再描画が走っても、作り直されたバーにフォーカスが残り、変えた高さも残る', async () => {
+  const page = await renderedPage();
+  recordStorage(page);
+  const d = page.document;
+  const rz = d.getElementById('tlrz');
+  press(page, rz, 'ArrowDown');
+  await rerender(page, 70);
+  assert.equal(rz.isConnected, false, '再描画で作り直されている（前提）');
+  const now = d.getElementById('tlrz');
+  assertSameElement(d.activeElement, now, '再描画後のフォーカス');
+  assert.equal(now.getAttribute('aria-valuenow'), '480');
+  // 作り直した上段は、描くときの style 属性で高さを持つ
+  assert.deepEqual(d.querySelectorAll('section.toprow').map((el) => el.getAttribute('style')), ['height:480px', 'height:480px']);
 });

@@ -45,6 +45,9 @@ function stripYamlComment(l) {
   }
   return l;
 }
+// roots の区切りは , だけ（--roots / TAKT_DASHBOARD_ROOTS / config.yaml の roots: a, b で共通）。
+// : でも区切ると、Windows のドライブ指定（C:\work）や : を含むディレクトリ名が 2 つに分かれてしまう
+const splitRoots = (spec) => spec.split(',').map((s) => s.trim()).filter(Boolean);
 function loadConfig() {
   const cfg = { roots: [], port: null };
   let text; try { text = readFileSync(path.join(CFG_DIR, 'config.yaml'), 'utf8'); } catch { return cfg; }
@@ -54,7 +57,7 @@ function loadConfig() {
     if (!line.trim()) continue;
     let m;
     if ((m = line.match(/^port:\s*(\d+)/))) { cfg.port = Number(m[1]); inRoots = false; continue; }
-    if ((m = line.match(/^roots:\s*(.*)$/))) { inRoots = true; if (m[1].trim()) cfg.roots.push(...m[1].split(/[,]/).map((x) => x.trim()).filter(Boolean)); continue; }
+    if ((m = line.match(/^roots:\s*(.*)$/))) { inRoots = true; cfg.roots.push(...splitRoots(m[1])); continue; }
     if (inRoots && (m = line.match(/^\s+-\s*(.+)$/))) { cfg.roots.push(m[1].trim().replace(/^['"]|['"]$/g, '')); continue; }
     inRoots = false;
   }
@@ -65,13 +68,17 @@ const optVal = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i 
 // 優先順: コマンドライン > 環境変数 > config.yaml > 既定
 const PORT = Number(optVal('--port') ?? process.env.TAKT_DASHBOARD_PORT ?? CONFIG.port ?? 7331);
 const FIXED_RUN = args.find((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--'))) ?? null;
-// run を探すディレクトリ。カレントディレクトリと ~/.takt に加えて、--roots / TAKT_DASHBOARD_ROOTS（, か : 区切り）/ config.yaml の roots と、その直下のディレクトリ
+// runRecord が返す <run_dir> の runDir。UI は表示中の run を ?run= にこの値で送り返すので、currentRun はこれと字面で照合する
+const FIXED_RUN_DIR = FIXED_RUN ? path.resolve(FIXED_RUN) : null;
+// run を探すディレクトリ。カレントディレクトリと ~/.takt に加えて、--roots / TAKT_DASHBOARD_ROOTS（, 区切り）/ config.yaml の roots と、その直下のディレクトリ
 const rootsSpec = optVal('--roots') ?? process.env.TAKT_DASHBOARD_ROOTS;
-const EXTRA_ROOTS = (rootsSpec !== undefined ? rootsSpec.split(/[,:]/) : CONFIG.roots).map((s) => s.trim()).filter(Boolean).map(expandHome);
+const EXTRA_ROOTS = (rootsSpec !== undefined ? splitRoots(rootsSpec) : CONFIG.roots.map((s) => s.trim()).filter(Boolean)).map(expandHome);
 
 // ---------- run 探索 ----------
 function listDirs(p) {
-  try { return readdirSync(p).map((d) => path.join(p, d)).filter((d) => statSync(d).isDirectory()); } catch { return []; }
+  let names; try { names = readdirSync(p); } catch { return []; }
+  // stat は項目ごとに失敗を飛ばす。takt list で消した worktree へのリンクや、走査中に消えた項目が 1 つあるだけで、同じディレクトリの run が全部消えないように
+  return names.map((d) => path.join(p, d)).filter((d) => { try { return statSync(d).isDirectory(); } catch { return false; } });
 }
 // Web UI（takt ui）から起動した run は <repo>/.takt/runs ではなく ~/.takt/state/projects/<id>/runs に書かれる
 const UI_PROJECTS_DIR = path.join(HOME, '.takt', 'state', 'projects');
@@ -93,6 +100,8 @@ function runRecord(dir, taskCache) {
   if (meta.status === 'running' && isRunInterrupted(root, meta, taskCache)) meta.status = 'interrupted';
   return { meta, root, runDir };
 }
+// 先頭が区切り文字 2 つのパス（\\host\share・//host/share・\\?\UNC\…・\\.\pipe\…）。Windows ではネットワーク上の場所やデバイスを指す
+const isNetworkPath = (p) => /^[\\/]{2}/.test(p);
 // リポジトリの候補: カレントディレクトリと、EXTRA_ROOTS とその直下のディレクトリ。run の探索（findRuns）と tasks.yaml の逆引き（tasksYamlFor）で使う。
 // ~/.takt は findRuns だけが足す（逆引きの候補には入れない）。揃えると run 一覧や逆引きの結果（repo 名・キュー・中断判定）が変わりうるので、この違いはそのまま残している
 function repoCandidates() {
@@ -107,16 +116,20 @@ function cloneMetaPaths(repo) {
   }
   return paths;
 }
+// リポジトリから辿れる worktree の一覧: clone-meta の clonePath と、.takt/tasks.yaml の worktree_path。
+// worktree_path は parseTasks で読む（空白を含むパスや引用符付きの値を、currentTask の照合と同じ値として扱うため）。
+// 一覧（findRuns）と逆引き（tasksYamlFor）の両方がここを通る。読めない tasks.yaml は飛ばす
+function worktreePathsOf(repo) {
+  let tasks = [];
+  try { tasks = parseTasks(readFileSync(path.join(repo, '.takt', 'tasks.yaml'), 'utf8')); } catch {}
+  return [...cloneMetaPaths(repo), ...tasks.map((t) => t.worktree_path).filter(Boolean)];
+}
 function findRuns(taskCache) {
   // 探索の順番は cwd → ~/.takt → EXTRA_ROOTS（とその直下）。~/.takt を含むのは findRuns だけ（repoCandidates のコメントを参照）
   const roots = new Set([process.cwd(), path.join(HOME, '.takt'), ...repoCandidates()]);
   // リポジトリから takt が作った worktree を辿る: .takt/clone-meta/*.json の clonePath と tasks.yaml の worktree_path。
   // takt の既定では worktree はリポジトリの隣（../<clone-name>）に作られるので、リポジトリで起動すれば --roots 無しで見つかる
-  for (const repo of [...roots]) {
-    for (const cp of cloneMetaPaths(repo)) if (existsSync(cp)) roots.add(cp);
-    const ty = path.join(repo, '.takt', 'tasks.yaml');
-    if (existsSync(ty)) for (const m of readFileSync(ty, 'utf8').matchAll(/^\s+worktree_path:\s*(\S+)/gm)) if (existsSync(m[1])) roots.add(m[1]);
-  }
+  for (const repo of [...roots]) for (const wt of worktreePathsOf(repo)) if (existsSync(wt)) roots.add(wt);
   const runDirs = [...roots].flatMap((root) => listDirs(path.join(root, '.takt', 'runs')));
   for (const projDir of listDirs(UI_PROJECTS_DIR)) runDirs.push(...listDirs(path.join(projDir, 'runs')));
   const runs = [];
@@ -324,14 +337,19 @@ function timeline(runDir, routing, meta, stepTagsOf) {
     // 切替の検知: レート上限等で provider が変わると、再開時の指示文に切替前/現在が書かれる
     if (t === 'phase_start' && ts && st) {
       const ui = String(e.userInstruction ?? '');
-      const sw = ui.match(/切替前 provider\/model:\s*([\w.-]+)\s*\/\s*([\w.-]+)[\s\S]{0,200}?現在の provider\/model:\s*([\w.-]+)\s*\/\s*([\w.-]+)/);
-      if (sw) {
-        const from = sw[1] + '/' + sw[2], to = sw[3] + '/' + sw[4];
-        actualPm[st] = { provider: sw[3], model: sw[4], source: 'log' };
+      // 通知文は takt 0.74.0 の fallback-notice テンプレート（日本語: 「- 切替前 provider/model: p / m」「- 現在の provider/model: p / m」、
+      // 英語（takt の既定言語）: 「- Previous provider/model: …」「- Current provider/model: …」）。model が無いと takt は空文字を入れるので、
+      // model は空でもよく、値は同じ行の中だけから取る（[ \t] で改行をまたがない。次の行の「-」や本文を model として拾わないため）
+      const prev = ui.match(/(?:切替前|Previous) provider\/model:[ \t]*([\w.-]+)[ \t]*\/[ \t]*([\w.-]*)/);
+      const cur = ui.match(/(?:現在の|Current) provider\/model:[ \t]*([\w.-]+)[ \t]*\/[ \t]*([\w.-]*)/);
+      if (prev && cur) {
+        const from = prev[1] + (prev[2] ? '/' + prev[2] : ''), to = cur[1] + (cur[2] ? '/' + cur[2] : '');
+        const provider = cur[1], model = cur[2] || null;
+        actualPm[st] = { provider, model, source: 'log' };
         // 切替はリトライの開始と同じ瞬間なので、別の行にせず開始行の provider 欄に「切替前 → 切替後」として載せる。
         // 通常ステップは step_start が先に来ているので直前の開始行に付け、並列の子は開始行がこの後に作られるので pending に置く
         const startRow = rows.findLast((r) => (r.kind === 'step' || r.kind === 'sub') && r.step === st && Math.abs(new Date(ts) - new Date(r.ts)) <= 5000);
-        if (startRow) { startRow.switchFrom = from; startRow.provider = sw[3]; startRow.model = sw[4]; startRow.source = 'log'; }
+        if (startRow) { startRow.switchFrom = from; startRow.provider = provider; startRow.model = model; startRow.source = 'log'; }
         else pendingSwitch[st] = { from, to, ts, top: started.has(base) };
       }
     }
@@ -547,12 +565,12 @@ function stepTagsIn(text) {
   return out;
 }
 
-// ---------- tasks.yaml（worktree → 本体リポジトリを clone-meta で逆引き） ----------
+// ---------- tasks.yaml（worktree → 本体リポジトリを clone-meta と tasks.yaml の worktree_path で逆引き） ----------
 function tasksYamlFor(root) {
   const direct = path.join(root, '.takt', 'tasks.yaml');
   if (existsSync(direct)) return { path: direct, text: readFileSync(direct, 'utf8') };
   for (const repo of repoCandidates()) {
-    if (!cloneMetaPaths(repo).includes(root)) continue;
+    if (!worktreePathsOf(repo).includes(root)) continue;
     const p = path.join(repo, '.takt', 'tasks.yaml');
     if (existsSync(p)) try { return { path: p, text: readFileSync(p, 'utf8') }; } catch {}
   }
@@ -607,6 +625,11 @@ function currentRun(sel, runs, taskCache) {
   if (sel) {
     const hit = runs.find((r) => r.runDir === sel);
     if (hit) return hit;
+    // 一覧に無いネットワーク上のパス（\\host\share・//host/share）は開かない。?run= は外部サイトのリンクや埋め込みからも届くので、
+    // それだけで Windows が SMB に接続（資格情報を送る）しないよう、meta.json を読む前に見つからない扱いにする。
+    // ただし <run_dir> の run は除く。利用者がコマンドラインで指定した場所で、起動時と ?run= なしの要求で既に読んでいる。
+    // <run_dir> は一覧に入らないことがあり、UI は 2 回目の取得から表示中の run の runDir を ?run= で送り返すので、ここで弾くとネットワーク上の <run_dir> が開けなくなる
+    if (isNetworkPath(sel) && sel !== FIXED_RUN_DIR) return null;
     try { return runRecord(sel, taskCache); } catch {} // 一覧に無くても meta.json があれば開く
     return null; // 指定した run が無いときに別の run を返すと、URL と表示が食い違う。見つからなかったことは state() の runNotFound で返す
   }
