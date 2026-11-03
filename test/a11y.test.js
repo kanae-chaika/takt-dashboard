@@ -750,6 +750,25 @@ test('先に始めた取得が成功した後に、後から始めた取得が�
   assert.ok(upd(page).includes(STATE_ERR), upd(page));
 });
 
+test('同じ run の取得が重なり、後から始めた取得が先に失敗したら、先に始めた取得の成功が遅れて届いてもエラー表示を消さない', async () => {
+  const page = await renderedPage();
+  // 1 回目の取得だけ止めておき、2 回目（後から始めた取得）が失敗した後に成功させる
+  let releaseOld; const held = new Promise((res) => { releaseOld = res; });
+  let calls = 0, oldReq = null;
+  const realFetch = page.ctx.fetch;
+  page.ctx.fetch = (u) => {
+    if (!u.startsWith('/api/state')) return realFetch(u);
+    if (++calls === 1) return (oldReq = held.then(() => realFetch(u)));
+    return Promise.reject(new TypeError('Failed to fetch'));
+  };
+  const oldTick = page.ctx.tick();
+  await page.ctx.tick();
+  assert.ok(upd(page).includes(STATE_ERR), '後から始めた取得の失敗（前提）');
+  releaseOld();
+  await oldReq; await oldTick;
+  assert.ok(upd(page).includes(STATE_ERR), upd(page));
+});
+
 // ---------- 指摘 15: レポートの取得失敗 ----------
 
 const vbody = (page) => page.document.getElementById('vbody').textContent;

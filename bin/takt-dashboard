@@ -902,8 +902,8 @@ function runLabel(r){ const mark = r.status==='running' ? '🟢 ' : (r.status===
 // 状態を取得できなかったことを #upd に出す。#app は消さず、最後に表示できていた画面を残す。
 // lastRaw を捨てるのは、復旧後の応答が失敗前と同じでも描き直して、このエラー表示を消すため
 function showStateError(){ lastRaw = null; document.getElementById('upd').innerHTML = '<span class="err">サーバーから取得できません</span>'; }
-// 取得が 2 秒を超えると次の tick と重なる。後から始めた取得が先に成功していたら、先に始めた取得の失敗は出さない（同じ世代なので selGen では見分けられない）
-let tickSeq = 0, okSeq = 0;
+// 取得が 2 秒を超えると次の tick と重なる。後から始めた取得の結果（成功・失敗とも）を反映した後に届いた、先に始めた取得の結果は捨てる（同じ世代なので selGen では見分けられない）
+let tickSeq = 0, shownSeq = 0;
 async function tick(){
   const reqRun = selectedRun, gen = selGen, seq = ++tickSeq;
   let raw;
@@ -911,9 +911,10 @@ async function tick(){
     const res = await fetch('/api/state?' + (reqRun ? 'run='+encodeURIComponent(reqRun) : '') + (SHOW_ALL ? '&all=1' : ''));
     if (!res.ok) throw new Error('HTTP ' + res.status); // 500 の本文は internal error で JSON ではない
     raw = await res.text();
-  } catch { if (gen === selGen && seq > okSeq) showStateError(); return; } // 古い世代の失敗・後から始めた取得の成功より前の失敗は、その後の表示を上書きしないよう捨てる
+  } catch { if (gen === selGen && seq > shownSeq) { shownSeq = seq; showStateError(); } return; } // 古い世代の失敗・後から始めた取得の結果より前の失敗は、その後の表示を上書きしないよう捨てる
   if (gen !== selGen) return; // 応答待ちの間に選択を変えられたら古い応答は捨てる（後から届いて選んだ run の表示や選択を上書きしないように）
-  okSeq = Math.max(okSeq, seq);
+  if (seq < shownSeq) return; // 後から始めた取得の結果（失敗のエラー表示を含む）を、先に始めた取得の古い応答で上書きしない
+  shownSeq = seq;
   if (raw === lastRaw) {
     const el = document.getElementById('elapsed');
     if (el && lastMeta && lastMeta.status === 'running') el.textContent = fmt(Date.now() - new Date(lastMeta.startTime).getTime());
