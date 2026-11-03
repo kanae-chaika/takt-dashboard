@@ -953,7 +953,8 @@ test('保存済みの高さが範囲外でも、読み込み時に 180〜2000 �
     await t.test('保存値 ' + saved + ' → ' + expected, async () => {
       const page = loadPage({ getItem: (k) => (k === 'tlH' ? saved : null), setItem() {}, removeItem() {} });
       await waitFor(() => page.document.querySelector('#tl table'), '最初の描画');
-      assert.deepEqual(rowHeights(page), [expected + 'px', expected + 'px']);
+      // 最初の描画の高さは style 属性で決まる（FakeDocument は style 属性を .style に反映しない）
+      assert.deepEqual(page.document.querySelectorAll('section.toprow').map((el) => el.getAttribute('style')), ['height:' + expected + 'px', 'height:' + expected + 'px']);
       assert.equal(page.document.getElementById('tlrz').getAttribute('aria-valuenow'), expected);
     });
   }
