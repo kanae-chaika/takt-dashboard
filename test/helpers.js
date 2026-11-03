@@ -6,13 +6,14 @@ import { fileURLToPath } from 'node:url';
 export const BIN = fileURLToPath(new URL('../bin/takt-dashboard', import.meta.url));
 const STARTUP_TIMEOUT_MS = 10000;
 
-// home は HOME にする一時ディレクトリ（実際の ~/.takt や ~/.config/takt-dashboard を読ませない）。env は追加・上書きする環境変数
-export function spawnDashboard({ cwd, home, args = [], env = {} }) {
+// home は HOME にする一時ディレクトリ（実際の ~/.takt や ~/.config/takt-dashboard を読ませない）。env は追加・上書きする環境変数。
+// bin は起動するスクリプト（bin/ui/ を壊したコピーで起動するテスト用。リポジトリの bin/ui/ を書き換えずに済む）
+export function spawnDashboard({ cwd, home, args = [], env = {}, bin = BIN }) {
   const e = { ...process.env, HOME: home };
   delete e.TAKT_DASHBOARD_ROOTS;
   delete e.TAKT_DASHBOARD_PORT;
   Object.assign(e, env);
-  const proc = spawn(process.execPath, [BIN, '--port', '0', ...args], { cwd, env: e, stdio: ['ignore', 'pipe', 'pipe'] });
+  const proc = spawn(process.execPath, [bin, '--port', '0', ...args], { cwd, env: e, stdio: ['ignore', 'pipe', 'pipe'] });
   // 'exit' の時点では stdout / stderr が読み終わっていないことがあるので、閉じた後の 'close' を待つ。
   // 起動そのものに失敗した場合（cwd が無い等）は 'error' になるので、それも終了として扱う（リスナーが無いとテストのプロセスごと落ちる）
   const exited = new Promise((resolve) => {
