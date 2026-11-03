@@ -104,6 +104,9 @@ takt 本体の Web UI（`takt ui`、`http://127.0.0.1:20525`）が一覧に出�
 ```bash
 git clone https://github.com/kanae-chaika/takt-dashboard.git
 cd takt-dashboard && npm link
+npm install        # テストと ESLint 用（実行時の依存は無い）
+npm test
+npm run lint
 ```
 
 ## ライセンス
@@ -151,6 +154,6 @@ Both can also be set with environment variables (`TAKT_DASHBOARD_ROOTS`, `TAKT_D
 
 **Caveats**: the UI text is Japanese only for now (English is planned). TAKT's run log format is experimental and may change; verified against takt 0.73.0. Run data lives in each worktree's `.takt/runs/`, so deleting a task in `takt list` removes it from the dashboard too. Binds to localhost only, no authentication.
 
-**Development (not needed for normal use)**: only if you want to modify the dashboard itself, clone the repository and run `npm link` instead of `npm install -g`; the `takt-dashboard` command then points at your checkout.
+**Development (not needed for normal use)**: only if you want to modify the dashboard itself, clone the repository and run `npm link` instead of `npm install -g`; the `takt-dashboard` command then points at your checkout. `npm install` brings in the dev tooling (there are no runtime dependencies); `npm test` runs the tests and `npm run lint` runs ESLint.
 
 License: MIT

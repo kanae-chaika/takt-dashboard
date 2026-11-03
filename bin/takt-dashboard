@@ -47,7 +47,7 @@ function stripYamlComment(l) {
 }
 function loadConfig() {
   const cfg = { roots: [], port: null };
-  let text = ''; try { text = readFileSync(path.join(CFG_DIR, 'config.yaml'), 'utf8'); } catch { return cfg; }
+  let text; try { text = readFileSync(path.join(CFG_DIR, 'config.yaml'), 'utf8'); } catch { return cfg; }
   let inRoots = false;
   for (const raw of text.split('\n')) {
     const line = stripYamlComment(raw).trimEnd();
@@ -265,7 +265,7 @@ function stepTagsFor(runDir, routing, workflow, root) {
 function readEvents(runDir) {
   const logsDir = path.join(runDir, 'logs');
   const events = [];
-  let files = [];
+  let files;
   try { files = readdirSync(logsDir).filter((f) => f.endsWith('.jsonl')).sort(); } catch { return events; }
   for (const f of files) {
     for (const line of readFileSync(path.join(logsDir, f), 'utf8').split('\n')) {
