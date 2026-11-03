@@ -261,7 +261,7 @@ async function tick(){
   const cur = a ? a.runDir : '';
   // 一覧は新しい 20 件。残りがあるときは末尾に「もっと見る」を置き、選ぶと全件に切り替える
   const more = (!SHOW_ALL && st.runsTotal > (st.runs||[]).length) ? '<option value="__more__">… もっと見る（残り '+(st.runsTotal - st.runs.length)+' 件）</option>' : '';
-  sel.innerHTML = (st.runs||[]).map(r => '<option value="'+esc(r.runDir)+'"'+(r.runDir===cur?' selected':'')+'>'+esc(runLabel(r))+'</option>').join('') + more;
+  sel.innerHTML = (st.runs||[]).map(r => '<option value="'+escA(r.runDir)+'"'+(r.runDir===cur?' selected':'')+'>'+esc(runLabel(r))+'</option>').join('') + more;
   if (!selectedRun && cur) selectedRun = cur; // 自動選択を固定（他の run が更新されても切り替わらない）
   // 再描画前にスクロール位置を保存（末尾に張り付いていたら再描画後も末尾へ）
   const keep = {};
