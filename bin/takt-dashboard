@@ -165,34 +165,103 @@ function isRunInterrupted(root, meta, cache) {
 }
 
 // ---------- routing ----------
+// yaml の小さな部分集合を読む: ブロック形式の map / list と、1 行に収まるフロー形式（{ a: b } / [a, b]）・引用符付きの値。
+// runtime.yaml は takt が yaml ライブラリの stringify で書くとブロック形式（profiles の下が複数行）になり、手書きではフロー形式もあるので両方読む。
+// 複数行にまたがるフロー形式や複数行の文字列は対象外（runtime.yaml の provider 配下では使わない）
+function parseYamlScalar(v) {
+  v = v.trim();
+  if (/^\{.*\}$/.test(v) || /^\[.*\]$/.test(v)) {
+    const isMap = v[0] === '{'; const body = v.slice(1, -1);
+    const parts = []; let depth = 0, q = null, cur = '';
+    for (const c of body) {
+      if (q) { if (c === q) q = null; }
+      else if (c === '"' || c === "'") q = c;
+      else if (c === '{' || c === '[') depth++;
+      else if (c === '}' || c === ']') depth--;
+      else if (c === ',' && depth === 0) { parts.push(cur); cur = ''; continue; }
+      cur += c;
+    }
+    if (cur.trim()) parts.push(cur);
+    if (!isMap) return parts.map(parseYamlScalar);
+    const out = {};
+    for (const p of parts) { const m = p.match(/^\s*([^:]+?)\s*:\s*(.*)$/); if (m) out[parseYamlScalar(m[1])] = m[2].trim() === '' ? null : parseYamlScalar(m[2]); }
+    return out;
+  }
+  if (/^".*"$/.test(v)) { try { return JSON.parse(v); } catch { return v.slice(1, -1); } }
+  if (/^'.*'$/.test(v)) return v.slice(1, -1).replace(/''/g, "'");
+  return v;
+}
+function parseYamlBlock(text) {
+  const lines = text.split('\n').map(stripYamlComment).filter((l) => l.trim()).map((l) => ({ indent: l.match(/^ */)[0].length, body: l.trim() }));
+  let i = 0;
+  // indent の深さにある map か list を読む。読み終えたら i は次の兄弟（より浅い行）を指す
+  const node = (indent) => {
+    if (lines[i]?.body.startsWith('- ') || lines[i]?.body === '-') {
+      const list = [];
+      while (i < lines.length && lines[i].indent === indent && (lines[i].body.startsWith('- ') || lines[i].body === '-')) {
+        const rest = lines[i].body.slice(1).trim();
+        if (/^[^{["'][^:]*:(\s|$)/.test(rest)) { lines[i] = { indent: indent + 2, body: rest }; list.push(node(indent + 2)); } // - key: v は map の要素
+        else { i++; list.push(rest === '' && lines[i]?.indent > indent ? node(lines[i].indent) : parseYamlScalar(rest)); }
+        while (i < lines.length && lines[i].indent > indent) i++;
+      }
+      return list;
+    }
+    const map = {};
+    while (i < lines.length && lines[i].indent === indent) {
+      const m = lines[i].body.match(/^("[^"]*"|'[^']*'|[^:]+?)\s*:(?:\s+(.*))?$/);
+      i++;
+      if (!m) continue;
+      const key = parseYamlScalar(m[1]);
+      if (m[2] !== undefined && m[2] !== '') map[key] = parseYamlScalar(m[2]);
+      else map[key] = (i < lines.length && lines[i].indent > indent) ? node(lines[i].indent) : null;
+      while (i < lines.length && lines[i].indent > indent) i++; // 読めなかった深い行（複数行のフロー形式など）は飛ばし、兄弟のキーを読み続ける
+    }
+    return map;
+  };
+  try { return lines.length ? node(lines[0].indent) : {}; } catch { return {}; }
+}
+// 設定からは決まらない割り当て（表示は「?」）。ログ（usage_events）があればそちらの実際の値で上書きする
+const PM_UNKNOWN = { provider: null, model: null };
 // runtime.yaml（provider.profiles + targets.steps/tags 形式）を優先し、
 // 無ければ旧 config.yaml の provider_routing.steps を読む。表示上はどちらも「設定値」。
+// takt 0.74.0 の dist/infra/config/runtime-provider/（schema.js・policy.js・loader.js）で確認した形式に合わせる:
+// - profile の extends は親の provider / model を子の値で上書きする（policy.js の flattenProfiles）
+// - 割り当ては profile（固定）・ladder（昇格で次の profile に進む）・pool（実行時に router が選ぶ）のどれか。
+//   ladder と pool は実行中にどれを使ったかが設定から決まらないので PM_UNKNOWN にする
+// - assignments（名前付きの割り当て）は defaults.assignment か実行時の指定で選ばれ、どれが使われたか分からないので全体を PM_UNKNOWN にする
+// - targets.personas は step の persona で引くが、step の persona を読んでいないので、steps / tags に無い step は PM_UNKNOWN にする
 function loadRuntimeRouting(p = path.join(HOME, '.takt', 'runtime.yaml')) {
   if (!existsSync(p)) return null;
   const text = readFileSync(p, 'utf8');
   if (!/^provider:/m.test(text)) return null;
-  const profiles = {}; const stepsRaw = {}; const tagsRaw = {}; let defProfile = null;
-  let sect = null; let sub = null;
-  for (const raw of text.split('\n')) {
-    const line = stripYamlComment(raw);
-    if (!line.trim()) continue;
-    if (/^  defaults:/.test(line)) { sect = 'defaults'; continue; }
-    if (/^  profiles:/.test(line)) { sect = 'profiles'; continue; }
-    if (/^  targets:/.test(line)) { sect = 'targets'; sub = null; continue; }
-    if (/^  [\w-]+:/.test(line)) { sect = null; continue; } // provider 配下の他キー
-    if (sect === 'targets' && /^    steps:/.test(line)) { sub = 'steps'; continue; }
-    if (sect === 'targets' && /^    tags:/.test(line)) { sub = 'tags'; continue; }
-    let m;
-    if (sect === 'defaults' && (m = line.match(/^\s+profile:\s*([\w-]+)/))) defProfile = m[1];
-    if (sect === 'profiles' && (m = line.match(/^    ([\w-]+):\s*\{\s*provider:\s*([\w-]+)(?:\s*,\s*model:\s*([\w.-]+))?\s*\}/)))
-      profiles[m[1]] = { provider: m[2], model: m[3] ?? null };
-    if (sect === 'targets' && sub && (m = line.match(/^      ([\w-]+):\s*\{\s*profile:\s*([\w-]+)\s*\}/)))
-      (sub === 'steps' ? stepsRaw : tagsRaw)[m[1]] = m[2];
-  }
-  const resolve = (name) => (name && profiles[name]) ? profiles[name] : null;
-  const steps = {}; for (const [k, v] of Object.entries(stepsRaw)) { const r = resolve(v); if (r) steps[k] = r; }
-  const tags = {}; for (const [k, v] of Object.entries(tagsRaw)) { const r = resolve(v); if (r) tags[k] = r; }
-  return { steps, tags, def: resolve(defProfile) ?? { provider: 'claude', model: null }, source: path.basename(p), mtime: statSync(p).mtimeMs };
+  const pv = parseYamlBlock(text).provider;
+  const base = { source: path.basename(p), mtime: statSync(p).mtimeMs };
+  if (!pv || typeof pv !== 'object' || Array.isArray(pv)) return { steps: {}, tags: {}, def: { provider: 'claude', model: null }, ...base };
+  const isMap = (o) => o && typeof o === 'object' && !Array.isArray(o);
+  if (isMap(pv.assignments) && Object.keys(pv.assignments).length) return { steps: {}, tags: {}, def: PM_UNKNOWN, ...base };
+  const profiles = isMap(pv.profiles) ? pv.profiles : {};
+  const flat = {};
+  const profileOf = (name, seen = new Set()) => {
+    if (flat[name]) return flat[name];
+    const pr = profiles[name];
+    if (!isMap(pr) || seen.has(name)) return null; // 未定義・循環（takt は起動時に弾くので通常は来ない）
+    seen.add(name);
+    const parent = pr.extends ? profileOf(pr.extends, seen) : {};
+    if (!parent) return null;
+    const out = { provider: pr.provider ?? parent.provider ?? null, model: pr.model ?? parent.model ?? null };
+    return (flat[name] = out);
+  };
+  // 割り当て 1 つ（{ profile } / { ladder } / { pool }）→ { provider, model }。無ければ null
+  const assign = (a) => {
+    if (!isMap(a)) return null;
+    if (a.profile !== undefined) { const r = profileOf(a.profile); return r?.provider ? { provider: r.provider, model: r.model } : PM_UNKNOWN; }
+    return (a.ladder !== undefined || a.pool !== undefined || a.assignment !== undefined) ? PM_UNKNOWN : null;
+  };
+  const targets = isMap(pv.targets) ? pv.targets : {};
+  const pick = (m) => { const out = {}; if (isMap(m)) for (const [k, v] of Object.entries(m)) { const r = assign(v); if (r) out[k] = r; } return out; };
+  const steps = pick(targets.steps), tags = pick(targets.tags);
+  const hasPersonas = isMap(targets.personas) && Object.keys(targets.personas).length > 0;
+  return { steps, tags, def: assign(pv.defaults) ?? { provider: 'claude', model: null }, ...(hasPersonas ? { hasPersonas } : {}), ...base };
 }
 function loadRouting(cfg = path.join(HOME, '.takt', 'config.yaml')) {
   const rt = loadRuntimeRouting();
@@ -279,14 +348,35 @@ function readEvents(runDir) {
   const logsDir = path.join(runDir, 'logs');
   const events = [];
   let files;
+  // logs/ には実行のイベント以外の jsonl（usage_events の *-usage-events.jsonl など、type の無い記録）も書かれるので、
+  // type が文字列の記録だけをイベントとして扱う（type の無い記録を混ぜるとタイムラインの組み立てで例外になる）
   try { files = readdirSync(logsDir).filter((f) => f.endsWith('.jsonl')).sort(); } catch { return events; }
   for (const f of files) {
     for (const line of readFileSync(path.join(logsDir, f), 'utf8').split('\n')) {
       if (!line.trim()) continue;
-      try { events.push(JSON.parse(line)); } catch {}
+      try { const e = JSON.parse(line); if (typeof e?.type === 'string') events.push(e); } catch {}
     }
   }
   return events;
+}
+// takt の usage_events のログ（logs/*-usage-events.jsonl）を時刻順に返す。provider_model の '(default)' は model 未指定（provider の既定）
+function readUsageEvents(runDir) {
+  const logsDir = path.join(runDir, 'logs');
+  const out = [];
+  let files;
+  try { files = readdirSync(logsDir).filter((f) => f.endsWith('-usage-events.jsonl')); } catch { return out; }
+  for (const f of files) {
+    let text;
+    try { text = readFileSync(path.join(logsDir, f), 'utf8'); } catch { continue; }
+    for (const line of text.split('\n')) {
+      let e; try { e = JSON.parse(line); } catch { continue; }
+      const at = Date.parse(e?.timestamp);
+      if (typeof e?.step !== 'string' || typeof e.provider !== 'string' || !e.provider || Number.isNaN(at)) continue;
+      const model = typeof e.provider_model === 'string' && e.provider_model && e.provider_model !== '(default)' ? e.provider_model : null;
+      out.push({ step: e.step, provider: e.provider, model, at });
+    }
+  }
+  return out.sort((a, b) => a.at - b.at);
 }
 // stepTagsOf はワークフロー名から { step 名: [tag, …] }（yaml が無ければ null）を返す関数
 function timeline(runDir, routing, meta, stepTagsOf) {
@@ -305,8 +395,10 @@ function timeline(runDir, routing, meta, stepTagsOf) {
     const tags = routing.tags ?? {}; // tags の無い古い控えもある
     let s = routing.steps[step];
     if (!s && Object.keys(tags).length) s = (stepTagsOf(workflow)?.[step] ?? []).filter((t) => Object.hasOwn(tags, t)).map((t) => tags[t]).at(-1);
+    // steps / tags に無い step は、targets.personas があれば persona で引かれているかもしれないので決めない（loadRuntimeRouting の説明）
+    const d = routing.hasPersonas ? PM_UNKNOWN : routing.def;
     return s ? { provider: s.provider, model: s.model, source: routing.source }
-             : { provider: routing.def.provider, model: routing.def.model, source: routing.source };
+             : { provider: d.provider, model: d.model, source: routing.source };
   };
   const subSeen = new Set();
   const actualPm = {}; // step → 切替後の実プロバイダー（レート上限などで変わったとき）
@@ -385,6 +477,19 @@ function timeline(runDir, routing, meta, stepTagsOf) {
     }
   }
   for (const [st, p] of Object.entries(pendingSwitch)) rows.push({ ts: p.ts, kind: 'switch', step: st, top: p.top, from: p.from, to: p.to }); // 開始行に載せられなかった切替だけ行にする
+  // 並列の子の実際の provider / model。takt の設定 logging.usage_events が有効なら、子の実行 1 回ごと（終わった時点）に
+  // step・provider・provider_model が logs/<session>-usage-events.jsonl に書かれる（takt 0.74.0 の dist/core/logging/usageEventLogger.js と
+  // dist/core/workflow/engine/agent-usage-event.js で確認）。設定から引いた値より正確なので、あれば上書きする。
+  // 記録に iteration は無いので、同じ step の子の開始行に、開始より後の記録を古い順に 1 つずつ当てる（リトライの @n も試行ごとに記録がある）
+  {
+    const usage = readUsageEvents(runDir), used = new Set();
+    for (const r of rows.filter((x) => x.kind === 'sub').sort((a, b) => a.ts.localeCompare(b.ts))) {
+      const i = usage.findIndex((u, j) => !used.has(j) && u.step === r.step && u.at >= Date.parse(r.ts));
+      if (i < 0) continue;
+      used.add(i);
+      r.provider = usage[i].provider; r.model = usage[i].model; r.source = 'log';
+    }
+  }
   rows.sort((a, b) => a.ts.localeCompare(b.ts) || ((a.kind === 'sub' && b.kind === 'sub') ? a.step.localeCompare(b.step) : 0));
   // 並列の子（sub）は、そのフェーズ行を子の直下にまとめて木にする（子の中は時刻順。子どうしは開始順 → 名前順）。
   // 枝は ├ 、judge まで終わった子だけ最後を └ にする（終わっていない子は次の行が来るかもしれないので ├ のまま）
