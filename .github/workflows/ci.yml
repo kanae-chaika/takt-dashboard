@@ -6,6 +6,9 @@ on:
   push:
     branches: [main]
   pull_request:
+# checkout とテストだけなので読み取りで足りる。指定しないとリポジトリの既定の権限（書き込みを含むことがある）になる
+permissions:
+  contents: read
 jobs:
   test:
     runs-on: ${{ matrix.os }}
