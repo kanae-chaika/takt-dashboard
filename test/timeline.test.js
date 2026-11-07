@@ -66,6 +66,23 @@ function planEvents(withReport) {
 const ITER1 = path.join('iter1', 'plan.md'), ITER2 = path.join('iter2', 'plan.md');
 const RUN_PHASE = path.join(RUNS, '20261101-100100-report-phase');
 const RUN_WINDOW = path.join(RUNS, '20261101-100200-step-window');
+// RUN_PHASE はどちらの手順でも同じ行になるので、手順 1（report フェーズ）が手順 2 より先に効くことはこの run で確かめる。
+// iteration 1 は report フェーズ（11 〜 20）で終わり、直後に iteration 2 が report フェーズなしで短く走る（21 〜 24）。
+// mtime 23 は iteration 1 の report フェーズの終了 + 5 秒の窓に入る（手順 1 なら plan#1）。
+// step 全体の時間帯では両方の窓に入り、終了時刻は iteration 2（24）の方が近い（手順 2 だけなら plan#2）
+const RUN_PHASE_FIRST = path.join(RUNS, '20261101-100300-report-phase-first');
+const PHASE_FIRST_EVENTS = [
+  { type: 'step_start', step: 'plan', iteration: 1, provider: 'claude', model: 'sonnet', timestamp: at(0) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'execute', timestamp: at(1) },
+  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'execute', status: 'done', timestamp: at(10) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'report', timestamp: at(11) },
+  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'report', status: 'done', timestamp: at(20) },
+  { type: 'step_complete', step: 'plan', iteration: 1, status: 'done', timestamp: at(20) },
+  { type: 'step_start', step: 'plan', iteration: 2, provider: 'claude', model: 'sonnet', timestamp: at(21) },
+  { type: 'phase_start', step: 'plan', iteration: 2, phaseName: 'execute', timestamp: at(22) },
+  { type: 'phase_complete', step: 'plan', iteration: 2, phaseName: 'execute', status: 'done', timestamp: at(23) },
+  { type: 'step_complete', step: 'plan', iteration: 2, status: 'done', timestamp: at(24) },
+];
 
 let server;
 
@@ -76,6 +93,7 @@ before(async () => {
   writeRun(path.basename(RUN_PHASE), planEvents(true), { [ITER1]: 19, [ITER2]: 119 });
   // report フェーズが無いので、step 全体（o 〜 o + 21）の中の時刻にする
   writeRun(path.basename(RUN_WINDOW), planEvents(false), { [ITER1]: 15, [ITER2]: 115 });
+  writeRun(path.basename(RUN_PHASE_FIRST), PHASE_FIRST_EVENTS, { [ITER1]: 23 });
   server = await startDashboard({ cwd: REPO, home: HOME, env: { PATH: '', TAKT_DASHBOARD_ROOTS: '' } });
 });
 
@@ -111,6 +129,13 @@ test('同じ step を 2 iteration 実行した run で、レポートは mtime �
   const timeline = await getTimeline(RUN_PHASE);
   assert.deepEqual(reportsOf(timeline, 'plan#1'), [ITER1]);
   assert.deepEqual(reportsOf(timeline, 'plan#2'), [ITER2]);
+});
+
+test('mtime が report フェーズの窓と別の iteration の step 全体の時間帯の両方に入るとき、レポートは report フェーズの iteration の行に付く', async () => {
+  const timeline = await getTimeline(RUN_PHASE_FIRST);
+  // step 全体の時間帯だけで選ぶと、終了時刻が近い plan#2 に付く
+  assert.deepEqual(reportsOf(timeline, 'plan#1'), [ITER1]);
+  assert.deepEqual(reportsOf(timeline, 'plan#2'), []);
 });
 
 test('report フェーズのイベントが無い run でも、レポートは mtime が入る step 全体の時間帯の iteration の行に付く', async () => {
