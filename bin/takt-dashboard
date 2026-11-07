@@ -393,7 +393,10 @@ function timeline(runDir, routing, meta, stepTagsOf) {
   // 割り当てが食い違う tag がある run はそもそも始まらないので、どれを選んでも同じ profile になる
   const cfgPm = (step, workflow) => {
     const tags = routing.tags ?? {}; // tags の無い古い控えもある
-    let s = routing.steps[step];
+    // targets.steps は <workflow>/<step> のキーを先に見て、無ければ <step> を見る
+    // （takt 0.74.0 の dist/core/workflow/provider-target-resolution.js の resolveWorkflowStepTarget と同じ順）
+    const steps = routing.steps, qualified = workflow ? workflow + '/' + step : null;
+    let s = (qualified && Object.hasOwn(steps, qualified)) ? steps[qualified] : Object.hasOwn(steps, step) ? steps[step] : undefined;
     if (!s && Object.keys(tags).length) s = (stepTagsOf(workflow)?.[step] ?? []).filter((t) => Object.hasOwn(tags, t)).map((t) => tags[t]).at(-1);
     return s ? { provider: s.provider, model: s.model, source: routing.source }
              : { provider: routing.def.provider, model: routing.def.model, source: routing.source };

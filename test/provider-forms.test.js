@@ -31,12 +31,12 @@ function makeSandbox(runtimeYaml) {
 
 // 親 reviewers の下で並列の子 subs を実行した run。subs は [step 名, 開始の秒] の配列（同じ step を 2 回並べるとリトライ）。
 // usage は usage-events.jsonl に書く記録（[step, provider, provider_model, 秒]）
-function writeRun(repo, slug, subs, usage = []) {
+function writeRun(repo, slug, subs, usage = [], workflow) {
   const runDir = path.join(repo, '.takt', 'runs', slug);
   fs.mkdirSync(path.join(runDir, 'logs'), { recursive: true });
   fs.writeFileSync(path.join(runDir, 'meta.json'), JSON.stringify({ status: 'completed', runSlug: slug, currentStep: 'reviewers', startTime: START, updatedAt: at(300) }));
   const events = [{ type: 'step_start', step: 'reviewers', iteration: 1, provider: 'claude', model: 'sonnet', timestamp: at(1) }];
-  for (const [step, sec] of subs) events.push({ type: 'phase_start', step, iteration: 1, phaseName: 'execute', timestamp: at(sec) });
+  for (const [step, sec] of subs) events.push({ type: 'phase_start', step, iteration: 1, phaseName: 'execute', timestamp: at(sec), ...(workflow ? { workflow } : {}) });
   fs.writeFileSync(path.join(runDir, 'logs', 'session-1.jsonl'), events.map((e) => JSON.stringify(e)).join('\n') + '\n');
   if (usage.length) {
     const lines = usage.map(([step, provider, model, sec]) => JSON.stringify({ run_id: slug, session_id: 'session-1', provider, provider_model: model, step, step_type: 'parallel', timestamp: at(sec), success: true, usage_missing: true, reason: 'not_available', usage: {} }));
@@ -102,6 +102,29 @@ test('ブロック形式の targets.steps の名指しは defaults より優先�
 
   // When / Then: 名指しの子は deep（provider は base から、model は自分の opus）。それ以外は defaults の base
   assert.deepEqual(await subRows(s, runDir, 'arch-review'), [{ provider: 'claude', model: 'opus', source: 'runtime.yaml' }]);
+  assert.deepEqual(await subRows(s, runDir, 'flow-review'), [{ provider: 'claude', model: 'sonnet', source: 'runtime.yaml' }]);
+});
+
+test('targets.steps の <workflow>/<step> のキーは <step> だけのキーより優先され、別の workflow のキーは使わない', async (t) => {
+  // Given: 子のイベントの workflow は review。arch-review には review/arch-review と arch-review の両方、flow-review には other/flow-review だけがある
+  const box = makeSandbox(`provider:
+  defaults:
+    profile: base
+  profiles:
+    base: { provider: claude, model: sonnet }
+    rev: { provider: codex, model: gpt-5 }
+    plain: { provider: opencode, model: big }
+  targets:
+    steps:
+      review/arch-review: { profile: rev }
+      arch-review: { profile: plain }
+      other/flow-review: { profile: rev }
+`);
+  const runDir = writeRun(box.repo, '20261101-100000-qualified', [['arch-review', 2], ['flow-review', 3]], [], 'review');
+  const s = await start(t, box);
+
+  // When / Then: takt と同じく review/arch-review が先。flow-review は workflow が違うので名指しなし扱いで defaults
+  assert.deepEqual(await subRows(s, runDir, 'arch-review'), [{ provider: 'codex', model: 'gpt-5', source: 'runtime.yaml' }]);
   assert.deepEqual(await subRows(s, runDir, 'flow-review'), [{ provider: 'claude', model: 'sonnet', source: 'runtime.yaml' }]);
 });
 
