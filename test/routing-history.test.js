@@ -95,19 +95,28 @@ test('2 つの runtime.yaml.bak-* の mtime の間に始まった run の並列�
   assert.deepEqual(await subPm(s, runDir, 'arch-review'), { provider: 'opencode', model: 'big-b', source: 'runtime.yaml.bak-new' });
 });
 
-test('runtime.yaml.bak-* から選んだ設定は ~/.config/takt-dashboard/routing/<run>.json の控えに書かれる', async (t) => {
+test('runtime.yaml.bak-* から選んだ設定は ~/.config/takt-dashboard/routing/<run>.json の控えに書かれ、以後 yaml を変えても表示が変わらない', async (t) => {
   // Given: 前のテストと同じ履歴で、bak の間に始まった run
   const box = setupBackups();
   const runDir = writeRun(box.repo, '20261101-100000-snap', START, ['arch-review']);
   const s = await start(t, box);
 
   // When: 初めて表示する
-  await subPm(s, runDir, 'arch-review');
+  const first = await subPm(s, runDir, 'arch-review');
 
-  // Then: 控えに bak-new の内容と出どころが書かれている（以後 yaml を変えても表示が変わらないように）
+  // Then: 控えに bak-new の内容と出どころが書かれている
   const snap = readSnap(box.home, runDir);
   assert.equal(snap.source, 'runtime.yaml.bak-new');
   assert.deepEqual(snap.def, { provider: 'opencode', model: 'big-b' });
+
+  // When: .bak-* を消して runtime.yaml を別の設定に書き換えてから、同じ run を表示し直す
+  const dir = path.join(box.home, '.takt');
+  for (const n of fs.readdirSync(dir).filter((n) => n.startsWith('runtime.yaml.bak'))) fs.rmSync(path.join(dir, n));
+  fs.writeFileSync(path.join(dir, 'runtime.yaml'), runtimeYaml('codex', 'changed-d'));
+
+  // Then: 控えから読むので初回と同じ bak-new の設定のまま（控えを読まない実装なら現在の runtime.yaml の codex / changed-d になる）
+  assert.deepEqual(await subPm(s, runDir, 'arch-review'), first);
+  assert.deepEqual(first, { provider: 'opencode', model: 'big-b', source: 'runtime.yaml.bak-new' });
 });
 
 test('どちらの runtime.yaml.bak-* よりも前に始まった run は、mtime が最も早い .bak の設定で表示される', async (t) => {
