@@ -1,14 +1,21 @@
-# push と PR のたびにテストと ESLint を回す。engines.node >= 20 なので 20 と 22 で確認する
+# push と PR のたびにテストと ESLint を回す。engines.node >= 20 なので 20 と 22 で確認する。
+# 利用者の OS は実装者と違う前提（CLAUDE.md）なので、ubuntu / windows / macos でも回す。
+# fail-fast を切るのは、1 つの OS で落ちても他の OS の結果を見られるようにするため
 name: CI
 on:
   push:
     branches: [main]
   pull_request:
+# checkout とテストだけなので読み取りで足りる。指定しないとリポジトリの既定の権限（書き込みを含むことがある）になる
+permissions:
+  contents: read
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         node: [20, 22]
     steps:
       - uses: actions/checkout@v4

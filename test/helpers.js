@@ -7,9 +7,10 @@ export const BIN = fileURLToPath(new URL('../bin/takt-dashboard', import.meta.ur
 const STARTUP_TIMEOUT_MS = 10000;
 
 // home は HOME にする一時ディレクトリ（実際の ~/.takt や ~/.config/takt-dashboard を読ませない）。env は追加・上書きする環境変数。
+// Windows の os.homedir() は HOME ではなく USERPROFILE を見るので、USERPROFILE にも同じ値を入れる（入れないと実際のホームを読む）。
 // bin は起動するスクリプト（bin/ui/ を壊したコピーで起動するテスト用。リポジトリの bin/ui/ を書き換えずに済む）
 export function spawnDashboard({ cwd, home, args = [], env = {}, bin = BIN }) {
-  const e = { ...process.env, HOME: home };
+  const e = { ...process.env, HOME: home, USERPROFILE: home };
   delete e.TAKT_DASHBOARD_ROOTS;
   delete e.TAKT_DASHBOARD_PORT;
   Object.assign(e, env);
