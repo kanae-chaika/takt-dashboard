@@ -1,6 +1,6 @@
 // bin/takt-dashboard を子プロセスとして起動し、HTTP と終了コードで振る舞いを確かめる。
 // 実行: node --test test/takt-dashboard.test.js
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync, copyFileSync, cpSync } from 'node:fs';
 import os from 'node:os';
@@ -9,10 +9,13 @@ import { BIN, spawnDashboard, startDashboard as startChild, stopDashboard } from
 
 const STARTUP_TIMEOUT_MS = 5000;
 
-// 実際の ~/.takt や ~/.config/takt-dashboard を読ませないよう、HOME と cwd を一時ディレクトリにする
-function makeSandbox(t) {
+// 実際の ~/.takt や ~/.config/takt-dashboard を読ませないよう、HOME と cwd を一時ディレクトリにする。
+// 消すのはファイルの全テストの後。t.after は登録順に走るので、テストごとに消すとサーバー（cwd がこの中）を止める前に消すことになる（Windows では使用中の cwd を消せない）
+const sandboxes = [];
+after(() => { for (const d of sandboxes) rmSync(d, { recursive: true, force: true }); });
+function makeSandbox() {
   const dir = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'takt-dashboard-test-')));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  sandboxes.push(dir);
   return dir;
 }
 
@@ -48,7 +51,7 @@ const isAlive = (proc) => proc.exitCode === null && proc.signalCode === null;
 
 test('/api/report にディレクトリを渡すと 404 not found を返し、プロセスは応答を続ける', async (t) => {
   // Given: reports/ 配下にサブディレクトリがある run を位置引数で開いたサーバー
-  const sandbox = makeSandbox(t);
+  const sandbox = makeSandbox();
   const runDir = makeRun(path.join(sandbox, '.takt', 'runs', 'run-dir-report'));
   mkdirSync(path.join(runDir, 'reports', 'sub'));
   const s = await startDashboard(t, sandbox, [runDir]);
@@ -69,7 +72,7 @@ test('/api/report にディレクトリを渡すと 404 not found を返し、�
 
 test('起動後に meta.json が消えると /api/state は 500 text/plain を返し、プロセスは応答を続ける', async (t) => {
   // Given: 有効な run を位置引数で開いたサーバー。この時点では /api/state が 200
-  const sandbox = makeSandbox(t);
+  const sandbox = makeSandbox();
   const runDir = makeRun(path.join(sandbox, '.takt', 'runs', 'run-meta-removed'));
   const s = await startDashboard(t, sandbox, [runDir]);
   const before = await fetch(s.base + '/api/state');
@@ -93,7 +96,7 @@ test('bin/ui/ のファイルを読めないと / は 500 text/plain を返し�
   // Given: bin/takt-dashboard と bin/ui/ を一時ディレクトリへコピーし、コピーから app.css を消して起動したサーバー。
   // UI_DIR はスクリプトの場所（import.meta.url）基準なので、コピーを起動すればリポジトリの bin/ui/ は書き換えずに済む。
   // 拡張子の無いスクリプトを ESM として読ませるため、すぐ上に "type": "module" の package.json を置く（リポジトリと同じ構成）
-  const sandbox = makeSandbox(t);
+  const sandbox = makeSandbox();
   const pkgBin = path.join(sandbox, 'pkg', 'bin');
   mkdirSync(pkgBin, { recursive: true });
   copyFileSync(BIN, path.join(pkgBin, 'takt-dashboard'));
@@ -121,7 +124,7 @@ test('bin/ui/ のファイルを読めないと / は 500 text/plain を返し�
 
 test('存在しない run_dir を渡すと listen せずに exit 1 し、stderr に meta.json が読めない旨を出す', async (t) => {
   // Given: 存在しないディレクトリ
-  const sandbox = makeSandbox(t);
+  const sandbox = makeSandbox();
   const missing = path.join(sandbox, 'no-such-run');
 
   // When: 位置引数に渡して起動する
@@ -140,7 +143,7 @@ for (const [name, prepare] of [
 ]) {
   test(`${name}を run_dir に渡すと listen せずに exit 1 する`, async (t) => {
     // Given: ディレクトリはあるが meta.json を読めない
-    const sandbox = makeSandbox(t);
+    const sandbox = makeSandbox();
     const dir = path.join(sandbox, 'run-unreadable');
     prepare(dir);
 
@@ -159,7 +162,7 @@ for (const [name, prepare] of [
 
 test('有効な run_dir を渡すと通常どおり起動し、/api/state がその run を返す', async (t) => {
   // Given: meta.json がある run
-  const sandbox = makeSandbox(t);
+  const sandbox = makeSandbox();
   const runDir = makeRun(path.join(sandbox, '.takt', 'runs', 'run-valid'));
 
   // When: 位置引数に渡して起動し、/api/state を要求する
@@ -175,7 +178,7 @@ test('有効な run_dir を渡すと通常どおり起動し、/api/state がそ
 
 test('?run= に一覧に無い run を渡しても meta.json があれば開く', async (t) => {
   // Given: run 探索の対象外（.takt/runs の外）にある run と、run_dir 指定なしで起動したサーバー
-  const sandbox = makeSandbox(t);
+  const sandbox = makeSandbox();
   const outside = makeRun(path.join(sandbox, 'elsewhere', 'run-outside'));
   const s = await startDashboard(t, sandbox);
 
@@ -190,7 +193,7 @@ test('?run= に一覧に無い run を渡しても meta.json があれば開く'
 
 test('/api/report にファイルを渡すと 200 text/plain でその内容を返す', async (t) => {
   // Given: reports/a.md がある run
-  const sandbox = makeSandbox(t);
+  const sandbox = makeSandbox();
   const runDir = makeRun(path.join(sandbox, '.takt', 'runs', 'run-report-file'));
   writeFileSync(path.join(runDir, 'reports', 'a.md'), '# レポート\n本文\n');
   const s = await startDashboard(t, sandbox, [runDir]);
@@ -204,9 +207,61 @@ test('/api/report にファイルを渡すと 200 text/plain でその内容を�
   assert.equal(await res.text(), '# レポート\n本文\n');
 });
 
+// reportText は p を reports/ 基準で解決し、reports/ の中に収まらないパスを弾く（run の外のファイルを読ませない）。
+// 弾いた結果の 404 と「ファイルが無い」404 を区別するため、指すファイルはどれも実在させ、同じサーバーで reports/ の中のファイルは 200 になることも確かめる
+async function startWithOutsideFiles(t) {
+  const sandbox = makeSandbox();
+  const runDir = makeRun(path.join(sandbox, '.takt', 'runs', 'run-report-escape'));
+  writeFileSync(path.join(runDir, 'reports', 'a.md'), '# レポート\n');
+  const s = await startDashboard(t, sandbox, [runDir]);
+  return { sandbox, runDir, s };
+}
+
+test('/api/report に p=../meta.json を渡すと 404 not found になり、run の meta.json を返さない', async (t) => {
+  // Given: reports/a.md と meta.json がある run を開いたサーバー
+  const { s } = await startWithOutsideFiles(t);
+
+  // When: reports/ の 1 つ上（run の直下）の meta.json を相対パスで要求する
+  const res = await fetch(s.base + '/api/report?p=' + encodeURIComponent('../meta.json'));
+
+  // Then: 404・not found（meta.json の中身ではない）。reports/ の中のファイルは同じサーバーで読める
+  assert.equal(res.status, 404);
+  assert.equal(await res.text(), 'not found');
+  assert.equal((await fetch(s.base + '/api/report?p=a.md')).status, 200);
+});
+
+test('/api/report に run の外のファイルの絶対パスを渡すと 404 not found になり、その中身を返さない', async (t) => {
+  // Given: run の外（sandbox の直下）に実在するファイル
+  const { sandbox, s } = await startWithOutsideFiles(t);
+  const secret = path.join(sandbox, 'secret.txt');
+  writeFileSync(secret, '秘密\n');
+
+  // When: その絶対パスを p に渡す
+  const res = await fetch(s.base + '/api/report?p=' + encodeURIComponent(secret));
+
+  // Then: 404・not found
+  assert.equal(res.status, 404);
+  assert.equal(await res.text(), 'not found');
+  assert.equal((await fetch(s.base + '/api/report?p=a.md')).status, 200);
+});
+
+test('/api/report に reports と名前の先頭が同じ隣のディレクトリのファイルを渡しても 404 not found になる', async (t) => {
+  // Given: run の直下に reports-other/b.md（reports/ の外だが、パスの文字列は reports で始まる）
+  const { runDir, s } = await startWithOutsideFiles(t);
+  mkdirSync(path.join(runDir, 'reports-other'));
+  writeFileSync(path.join(runDir, 'reports-other', 'b.md'), '# 隣\n');
+
+  // When: ../reports-other/b.md を要求する（区切り文字を見ずに前方一致だけで判定すると通ってしまう）
+  const res = await fetch(s.base + '/api/report?p=' + encodeURIComponent('../reports-other/b.md'));
+
+  // Then: 404・not found
+  assert.equal(res.status, 404);
+  assert.equal(await res.text(), 'not found');
+});
+
 test('/ は 200 text/html で no-store を付け、bin/ui の CSS と JS を 1 枚の HTML に埋め込んで返す', async (t) => {
   // Given: 有効な run を開いたサーバー
-  const sandbox = makeSandbox(t);
+  const sandbox = makeSandbox();
   const runDir = makeRun(path.join(sandbox, '.takt', 'runs', 'run-html'));
   const s = await startDashboard(t, sandbox, [runDir]);
 
