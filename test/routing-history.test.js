@@ -4,7 +4,7 @@
 // - runtime.yaml が無いとき: 旧形式の config.yaml（provider_routing.steps）を読み、それも無ければ既定の claude・model なし
 // ~/.takt の中身がケースごとに違うので、ケースごとに HOME とサーバーを分ける（HOME はサーバーの起動時に決まる）。
 // PATH を空にして手元の takt 本体を読ませない
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -23,10 +23,13 @@ const runtimeYaml = (provider, model) => `provider:
     base: { provider: ${provider}, model: ${model} }
 `;
 
-// HOME と repo を一時ディレクトリに作り、テストの終わりに消す
-function makeSandbox(t) {
+// HOME と repo を一時ディレクトリに作り、ファイルの全テストの後に消す。
+// t.after は登録順に走るので、テストごとに消すとサーバー（cwd がこの中）を止める前に消すことになる（Windows では使用中の cwd を消せない）
+const sandboxes = [];
+after(() => { for (const d of sandboxes) fs.rmSync(d, { recursive: true, force: true }); });
+function makeSandbox() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'takt-dashboard-routing-')));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  sandboxes.push(root);
   const home = path.join(root, 'home'), repo = path.join(root, 'repo');
   fs.mkdirSync(path.join(home, '.takt'), { recursive: true });
   fs.mkdirSync(path.join(repo, '.takt', 'runs'), { recursive: true });
@@ -68,8 +71,8 @@ const readSnap = (home, runDir) => JSON.parse(fs.readFileSync(path.join(home, '.
 // ---------- runtime.yaml.bak-* の選び方 ----------
 
 // 置き換えの履歴: A（〜開始の 1 時間前）→ B（〜開始の 1 時間後）→ C（現在の runtime.yaml）
-function setupBackups(t) {
-  const box = makeSandbox(t);
+function setupBackups() {
+  const box = makeSandbox();
   const dir = path.join(box.home, '.takt');
   const put = (name, provider, model, mtime) => {
     const p = path.join(dir, name);
@@ -84,7 +87,7 @@ function setupBackups(t) {
 
 test('2 つの runtime.yaml.bak-* の mtime の間に始まった run の並列の子は、後の .bak の設定で表示される', async (t) => {
   // Given: bak-old の mtime（開始の 1 時間前）と bak-new の mtime（開始の 1 時間後）の間に始まった run
-  const box = setupBackups(t);
+  const box = setupBackups();
   const runDir = writeRun(box.repo, '20261101-100000-between', START, ['arch-review']);
   const s = await start(t, box);
 
@@ -94,7 +97,7 @@ test('2 つの runtime.yaml.bak-* の mtime の間に始まった run の並列�
 
 test('runtime.yaml.bak-* から選んだ設定は ~/.config/takt-dashboard/routing/<run>.json の控えに書かれる', async (t) => {
   // Given: 前のテストと同じ履歴で、bak の間に始まった run
-  const box = setupBackups(t);
+  const box = setupBackups();
   const runDir = writeRun(box.repo, '20261101-100000-snap', START, ['arch-review']);
   const s = await start(t, box);
 
@@ -109,7 +112,7 @@ test('runtime.yaml.bak-* から選んだ設定は ~/.config/takt-dashboard/routi
 
 test('どちらの runtime.yaml.bak-* よりも前に始まった run は、mtime が最も早い .bak の設定で表示される', async (t) => {
   // Given: bak-old の mtime よりさらに 1 時間前に始まった run（開始より後の .bak は old と new の 2 つ）
-  const box = setupBackups(t);
+  const box = setupBackups();
   const runDir = writeRun(box.repo, '20261101-080000-before', at(-2 * HOUR), ['arch-review']);
   const s = await start(t, box);
 
@@ -121,7 +124,7 @@ test('どちらの runtime.yaml.bak-* よりも前に始まった run は、mtim
 
 test('runtime.yaml が無く旧形式の config.yaml だけがあるとき、並列の子は config.yaml の provider_routing.steps と最上位の provider / model で表示される', async (t) => {
   // Given: ~/.takt に config.yaml だけ。arch-review は steps で名指し、flow-review は名指しなし
-  const box = makeSandbox(t);
+  const box = makeSandbox();
   fs.writeFileSync(path.join(box.home, '.takt', 'config.yaml'), `# 旧形式の設定
 provider: codex
 model: gpt-5
@@ -139,7 +142,7 @@ provider_routing:
 
 test('runtime.yaml も config.yaml も無いとき、並列の子は既定の claude・model なしで表示される', async (t) => {
   // Given: ~/.takt は空
-  const box = makeSandbox(t);
+  const box = makeSandbox();
   const runDir = writeRun(box.repo, '20261101-100000-none', START, ['arch-review']);
   const s = await start(t, box);
 
