@@ -13,7 +13,9 @@ const fmt = (ms) => { const s=Math.max(0,Math.floor(ms/1000)); return Math.floor
 function pm(r){
   const cur = esc(r.provider ?? '?') + (r.model ? '/' + esc(r.model) : ''); // model 未指定（provider の既定）は provider 名だけ
   if (r.switchFrom) return '<span class="sw" title="レート上限などで切替">'+esc(r.switchFrom)+' → '+cur+'</span>'; // 切替があった開始行は黄色で「切替前 → 切替後」
-  const t = r.source==='log' ? '' : ' title="実行ログに記録が無いため設定（'+escA(r.source)+'）からの推定"'; return '<span'+t+'>'+cur+'</span>';
+  // provider が無いのは、設定の書き方（ladder・pool・assignments・personas）からは決まらないとき。takt の logging.usage_events を有効にすると実際の値が出る
+  const t = r.source==='log' ? '' : r.provider == null ? ' title="設定（'+escA(r.source)+'）からは判別できないため不明。takt の logging.usage_events を有効にすると実際の値を表示"' : ' title="実行ログに記録が無いため設定（'+escA(r.source)+'）からの推定"';
+  return '<span'+t+'>'+cur+'</span>';
 }
 function repLinks(r){ return (r.reports||[]).map(rel => '<button type="button" class="rep" data-rel="'+escA(rel)+'">'+esc(rel.split('/').pop())+'</button>').join(' '); }
 // 判定ラベルの色分け。タイムライン・タスク欄のボタンと経路のノードで同じ分類にする（needs_fix は takt の「修正が要る」判定なので reject と同じ赤）
