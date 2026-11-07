@@ -467,12 +467,15 @@ function timeline(runDir, routing, meta, stepTagsOf) {
 }
 
 // ---------- レポート ----------
+// takt の予約名（core/models/reserved-report-names.js の REPORT_INTERNAL_NAMESPACE）。中身はレポートの版ごとのコピー
+// （executions/versions/<uuid>/*.md）などの内部ファイルで、拾うと同じリンクが 2 つ並ぶ。reports 直下だけでなく subworkflows/.../ の中にもできる
+const REPORT_INTERNAL_DIR = '.takt-report-internal';
 function walkMd(dir, base) {
   const out = [];
   for (const name of (existsSync(dir) ? readdirSync(dir) : [])) {
     const p = path.join(dir, name);
     const s = statSync(p);
-    if (s.isDirectory()) out.push(...walkMd(p, base));
+    if (s.isDirectory()) { if (name !== REPORT_INTERNAL_DIR) out.push(...walkMd(p, base)); }
     else if (name.endsWith('.md')) out.push({ rel: path.relative(base, p), size: s.size, mtime: s.mtimeMs });
   }
   return out;
