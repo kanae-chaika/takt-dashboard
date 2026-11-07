@@ -17,7 +17,7 @@ TAKT の公式ツールではなく、TAKT プロジェクトとは関係のな�
 - **実行経路**: 公式 Web UI の実行経路に似たカード + ポート + 曲線の図。並列は枠の中に子を縦に並べ、リトライは枠が 2 つ並ぶ
 - **レート上限・リトライ**: `rate_limited` で中断 → リトライした経緯と、provider の切替（`codex/gpt-5 → claude/sonnet`）を開始行に表示
 - **中断・失敗**: プロセスが落ちて `running` のまま残った run を「中断」と判定し、どのステップで止まったかを終了行に出す。失敗は理由（`rule_no_match` など）と judge のエラーログ付き
-- **provider / model**: 並列の子はログに provider が無いので、run 開始時点の `~/.takt/runtime.yaml`（または `config.yaml`）から引く。run ごとに結果を保存するので、後から yaml を変えても過去の表示は変わらない
+- **provider / model**: 並列の子はイベントに provider が無いので、takt の usage_events のログがあればそこから、無ければ run 開始時点の `~/.takt/runtime.yaml`（または `config.yaml`）から引く（詳しくは「過去の run の provider / model を正しく出すために」）。run ごとに結果を保存するので、後から yaml を変えても過去の表示は変わらない
   - takt 本体と同じく `targets.steps` → `targets.tags` → `defaults` の順で引く。step の tag は workflow yaml の step の `tags:` から取り、これも run ごとに保存する
 - **レポート**: run の `reports/*.md` をステップに紐づけて一覧。クリックで本文を表示
 - 複数リポジトリ・worktree の run をまとめて一覧。2 秒ごとに自動更新
@@ -73,9 +73,24 @@ takt-dashboard /path/to/<run>          # この run だけを表示
 
 ## 過去の run の provider / model を正しく出すために
 
-並列の子ステップは takt のログに provider / model が記録されません。そのため設定ファイルから引きますが、設定を後から変えると過去の run の表示が変わってしまいます。
+並列の子ステップは、takt の実行ログ（`logs/*.jsonl` のイベント）に provider / model が記録されません。ダッシュボードは次の順で引きます。
 
-これを避けるため、`~/.takt/runtime.yaml` や `config.yaml` を変更するときは、変更前のファイルを次の名前で残しておくと、ダッシュボードが「run 開始時点で有効だった設定」を自動で選びます。
+1. takt の設定（`~/.takt/config.yaml`）で `logging.usage_events: true` にしている場合: 子の実行が終わるたびに、実際に使った provider / model が `logs/*-usage-events.jsonl` に書かれます。ダッシュボードはこれを最優先で使います（既定はオフ）
+2. それ以外（実行中でまだ記録が無い子を含む）: 設定ファイル（`~/.takt/runtime.yaml` または `config.yaml`）から引きます
+
+```yaml
+# ~/.takt/config.yaml
+logging:
+  usage_events: true
+```
+
+`runtime.yaml` が次の書き方のときは、実際に使われた provider / model が設定からは決まらないので「?」と表示します（hover で理由を表示）。正確に出したい場合は `logging.usage_events` を有効にしてください。
+
+- `ladder`（実行中に次の profile へ昇格することがある）・`pool`（実行時に router が選ぶ）
+- `assignments`（名前付きの割り当て。実行時にどれを使うか選ばれる）
+- `targets.personas`（`targets.steps` / `targets.tags` で名指ししていない step）
+
+設定から引く場合、設定を後から変えると過去の run の表示が変わってしまいます。これを避けるため、`~/.takt/runtime.yaml` や `config.yaml` を変更するときは、変更前のファイルを次の名前で残しておくと、ダッシュボードが「run 開始時点で有効だった設定」を自動で選びます。
 
 ```
 ~/.takt/runtime.yaml.bak-20260301-change-review-model   # 変更前の内容。ファイルの更新時刻 = 置き換えた時刻
@@ -130,7 +145,7 @@ A local web dashboard for watching [TAKT](https://github.com/nrslib/takt) runs. 
 - Execution path view (cards, ports and curves) similar to the official Web UI, including parallel fan-out and retries
 - Rate-limit interruptions, retries and provider switches shown on the step's start row
 - Detects runs whose process died while `running` and marks them "interrupted" with the step that was in flight; failed runs show the reason and the judge error log
-- Resolves provider/model for parallel children from `~/.takt/runtime.yaml` (or `config.yaml`) **as of the run's start time**, using dated backups (`runtime.yaml.bak-*`, `config.yaml.bak.*`) when present; the result is saved per run under `~/.config/takt-dashboard/routing/`. Like takt itself, it checks `targets.steps`, then `targets.tags` (matched against the step's `tags:` in the workflow yaml, also saved per run), then `defaults`
+- Resolves provider/model for parallel children from `~/.takt/runtime.yaml` (or `config.yaml`) **as of the run's start time**, using dated backups (`runtime.yaml.bak-*`, `config.yaml.bak.*`) when present; the result is saved per run under `~/.config/takt-dashboard/routing/`. Like takt itself, it checks `targets.steps`, then `targets.tags` (matched against the step's `tags:` in the workflow yaml, also saved per run), then `defaults`. When takt's `logging.usage_events: true` is set in `~/.takt/config.yaml`, the provider/model actually used is read from `logs/*-usage-events.jsonl` instead (most accurate; off by default). With `ladder`, `pool`, `assignments` or `targets.personas` (for steps not named in `targets.steps` / `targets.tags`) in `runtime.yaml`, the provider/model cannot be determined from the config and is shown as "?"
 - Lists runs across multiple repositories and worktrees; refreshes every 2 seconds
 
 **Usage**
