@@ -2,7 +2,7 @@
 
 [TAKT](https://github.com/nrslib/takt) の run をブラウザで見張るローカルダッシュボードです。
 依存ライブラリなし（Node.js 標準ライブラリのみ）で動きます。
-TAKT の公式ツールではありません（非公式）。
+TAKT の公式ツールではなく、TAKT プロジェクトとは関係のない非公式のツールです。
 
 [English](#english) is below.
 
