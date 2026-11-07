@@ -2,6 +2,7 @@
 // /api/state の timeline の行の組み立てを確かめる。
 // - 並列の子のリトライ: 同じ iteration のまま execute から走り直すと、2 回目以降を別の試行として key に @n を付ける
 // - レポートの紐づけ: mtime が report フェーズの時間帯（無ければ step 全体の時間帯）に入る iteration の行に付ける
+// - takt の内部用ディレクトリ（.takt-report-internal/。reports 直下にも subworkflows の中にもできる）の .md はレポートとして拾わない
 // HOME と cwd は一時ディレクトリにし、PATH を空にして手元の takt 本体を読ませない
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -84,6 +85,20 @@ const PHASE_FIRST_EVENTS = [
   { type: 'step_complete', step: 'plan', iteration: 2, status: 'done', timestamp: at(24) },
 ];
 
+// takt 0.74.0 は reports/.takt-report-internal/executions/versions/<uuid>/ にレポートの版ごとのコピーを、元のレポートと同じ時刻に書く。
+// 元のレポートとコピーを同じ mtime（plan#1 の report フェーズの中の 19 秒）で、reports 直下と subworkflows の中の両方に置く。
+// 時間帯の外（250 秒）には、内部ファイル（team-leader/audit/a.md）と、比較用の通常のレポート（other.md）を置く。
+// どちらも stem が step 名と違うので、ファイル名一致（手順 3）でも行に付かず、未分類（active.reports）に入るかで区別できる
+const RUN_INTERNAL = path.join(RUNS, '20261101-100400-report-internal');
+const UUID = '0b6f3c1e-8a52-4d1b-9e07-3f2a6c4d5e81';
+const INTERNAL = '.takt-report-internal';
+const SUB_PLAN = path.join('subworkflows', 'x', 'plan.md');
+const INTERNAL_FILES = {
+  [path.join(INTERNAL, 'executions', 'versions', UUID, 'plan.md')]: 19,
+  [path.join('subworkflows', 'x', INTERNAL, 'executions', 'versions', UUID, 'plan.md')]: 19,
+  [path.join(INTERNAL, 'team-leader', 'audit', 'a.md')]: 250,
+};
+
 let server;
 
 before(async () => {
@@ -94,6 +109,7 @@ before(async () => {
   // report フェーズが無いので、step 全体（o 〜 o + 21）の中の時刻にする
   writeRun(path.basename(RUN_WINDOW), planEvents(false), { [ITER1]: 15, [ITER2]: 115 });
   writeRun(path.basename(RUN_PHASE_FIRST), PHASE_FIRST_EVENTS, { [ITER1]: 23 });
+  writeRun(path.basename(RUN_INTERNAL), planEvents(true), { 'plan.md': 19, [SUB_PLAN]: 19, 'other.md': 250, ...INTERNAL_FILES });
   server = await startDashboard({ cwd: REPO, home: HOME, env: { PATH: '', TAKT_DASHBOARD_ROOTS: '' } });
 });
 
@@ -102,10 +118,13 @@ after(async () => {
   fs.rmSync(ROOT, { recursive: true, force: true });
 });
 
-async function getTimeline(runDir) {
+async function getState(runDir) {
   const res = await fetch(server.base + '/api/state?run=' + encodeURIComponent(runDir));
   assert.equal(res.status, 200);
-  return (await res.json()).timeline;
+  return res.json();
+}
+async function getTimeline(runDir) {
+  return (await getState(runDir)).timeline;
 }
 const reportsOf = (timeline, key) => {
   const row = timeline.find((r) => r.kind === 'step' && r.key === key);
@@ -142,4 +161,27 @@ test('report フェーズのイベントが無い run でも、レポートは m
   const timeline = await getTimeline(RUN_WINDOW);
   assert.deepEqual(reportsOf(timeline, 'plan#1'), [ITER1]);
   assert.deepEqual(reportsOf(timeline, 'plan#2'), [ITER2]);
+});
+
+// ---------- takt の内部用ディレクトリ（.takt-report-internal/） ----------
+
+test('.takt-report-internal/ の下のレポートのコピーは行に付かず、元のレポートのリンクだけが 1 つずつ付く', async () => {
+  // Given: plan#1 の report フェーズの中の時刻に、plan.md と subworkflows/x/plan.md と、それぞれの .takt-report-internal/ の中のコピーを置いた run
+  // When: /api/state でタイムラインを取る
+  const timeline = await getTimeline(RUN_INTERNAL);
+  // Then: plan#1 には元のレポート 2 つだけが付く（mtime が同じで順序は readdir 次第なので並べ替えて比べる）
+  assert.deepEqual([...reportsOf(timeline, 'plan#1')].sort(), ['plan.md', SUB_PLAN].sort());
+  // どの行にも .takt-report-internal の中のパスは付かない
+  const rels = timeline.flatMap((r) => r.reports ?? []);
+  assert.deepEqual(rels.filter((rel) => rel.split(path.sep).includes(INTERNAL)), []);
+});
+
+test('時間帯の外にある .takt-report-internal/ の下の .md は未分類のレポートにも出ず、通常のレポートは未分類に出る', async () => {
+  // Given: どの step の時間帯にも入らない時刻に、.takt-report-internal/team-leader/audit/a.md と other.md を置いた run
+  // When: /api/state を取る
+  const state = await getState(RUN_INTERNAL);
+  const rels = state.active.reports.map((r) => r.rel);
+  // Then: 通常のレポートは未分類に出て、内部ファイルは出ない
+  assert.ok(rels.includes('other.md'), 'other.md が未分類に出る: ' + JSON.stringify(rels));
+  assert.deepEqual(rels.filter((rel) => rel.split(path.sep).includes(INTERNAL)), []);
 });
