@@ -65,7 +65,7 @@ npm run lint                 # ESLint（検査のみ）
 - `node:test` を使うので別のテストランナーは入れない
 - **push 前にローカルで `npm run lint` と `npm test` を通す。** CI（GitHub Actions）でも同じものが回るが、CI 待ちで直すのではなく手元で通してから push する
 - ESLint は検査だけで、formatter は無い。シングルクォート・セミコロンあり・1 行に詰める既存の書き方に揃える。ESLint の指摘を黙らせるルール追加は、既存の書き方を守るために必要な場合だけにする（既存の `allowEmptyCatch` / `no-regex-spaces` / `ignoreRestSiblings` がその例）
-- テストは実環境の `~/.takt` / `~/.config/takt-dashboard` を読まないよう、`HOME` と cwd を一時ディレクトリにして起動する（起動・停止は `test/helpers.js` の `startDashboard` / `stopDashboard` を使う。`--port 0` で起動し、起動メッセージから実際のポートを読む）
+- テストは実環境の `~/.takt` / `~/.config/takt-dashboard` を読まないよう、`HOME`（Windows では `os.homedir()` が見る `USERPROFILE` も）と cwd を一時ディレクトリにして起動する（起動・停止は `test/helpers.js` の `startDashboard` / `stopDashboard` を使う。`--port 0` で起動し、起動メッセージから実際のポートを読む）
 - テストで run を作るときは `<root>/.takt/runs/<slug>/` に `meta.json` を置く（必須はこれだけ）。`logs/*.jsonl`・`reports/*.md` はそのテストで使う場合だけ作る
 
 ## コードの書き方
