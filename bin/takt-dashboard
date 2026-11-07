@@ -260,8 +260,8 @@ function loadRuntimeRouting(p = path.join(HOME, '.takt', 'runtime.yaml')) {
   const targets = isMap(pv.targets) ? pv.targets : {};
   const pick = (m) => { const out = {}; if (isMap(m)) for (const [k, v] of Object.entries(m)) { const r = assign(v); if (r) out[k] = r; } return out; };
   const steps = pick(targets.steps), tags = pick(targets.tags);
-  const hasPersonas = isMap(targets.personas) && Object.keys(targets.personas).length > 0;
-  return { steps, tags, def: assign(pv.defaults) ?? { provider: 'claude', model: null }, ...(hasPersonas ? { hasPersonas } : {}), ...base };
+  const def = isMap(targets.personas) && Object.keys(targets.personas).length ? PM_UNKNOWN : (assign(pv.defaults) ?? { provider: 'claude', model: null });
+  return { steps, tags, def, ...base };
 }
 function loadRouting(cfg = path.join(HOME, '.takt', 'config.yaml')) {
   const rt = loadRuntimeRouting();
@@ -395,10 +395,8 @@ function timeline(runDir, routing, meta, stepTagsOf) {
     const tags = routing.tags ?? {}; // tags の無い古い控えもある
     let s = routing.steps[step];
     if (!s && Object.keys(tags).length) s = (stepTagsOf(workflow)?.[step] ?? []).filter((t) => Object.hasOwn(tags, t)).map((t) => tags[t]).at(-1);
-    // steps / tags に無い step は、targets.personas があれば persona で引かれているかもしれないので決めない（loadRuntimeRouting の説明）
-    const d = routing.hasPersonas ? PM_UNKNOWN : routing.def;
     return s ? { provider: s.provider, model: s.model, source: routing.source }
-             : { provider: d.provider, model: d.model, source: routing.source };
+             : { provider: routing.def.provider, model: routing.def.model, source: routing.source };
   };
   const subSeen = new Set();
   const actualPm = {}; // step → 切替後の実プロバイダー（レート上限などで変わったとき）
