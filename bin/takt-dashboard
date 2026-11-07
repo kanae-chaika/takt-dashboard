@@ -481,15 +481,17 @@ function timeline(runDir, routing, meta, stepTagsOf) {
   // 並列の子の実際の provider / model。takt の設定 logging.usage_events が有効なら、子の実行 1 回ごと（終わった時点）に
   // step・provider・provider_model が logs/<session>-usage-events.jsonl に書かれる（takt 0.74.0 の dist/core/logging/usageEventLogger.js と
   // dist/core/workflow/engine/agent-usage-event.js で確認）。設定から引いた値より正確なので、あれば上書きする。
-  // 記録に iteration は無いので、同じ step の子の開始行に、開始より後の記録を古い順に 1 つずつ当てる（リトライの @n も試行ごとに記録がある）
+  // 記録に iteration は無いので、同じ step の子の開始行ごとに「その開始から、同じ step の次の開始（リトライの @n や次の iteration）まで」の
+  // 区間に入る記録を当てる。1 回の実行で記録が複数書かれることがある（失敗・完了のやり直し・最後の完了。ParallelRunner.js の
+  // recordAgentUsageEvent の呼び出し）ので、区間の最後の記録を使う。区間に記録が無い試行（途中で落ちた等）は、別の試行の記録を借りず設定の値のまま
   {
-    const usage = readUsageEvents(runDir), used = new Set();
-    for (const r of rows.filter((x) => x.kind === 'sub').sort((a, b) => a.ts.localeCompare(b.ts))) {
-      const i = usage.findIndex((u, j) => !used.has(j) && u.step === r.step && u.at >= Date.parse(r.ts));
-      if (i < 0) continue;
-      used.add(i);
-      r.provider = usage[i].provider; r.model = usage[i].model; r.source = 'log';
-    }
+    const usage = readUsageEvents(runDir);
+    const subs = rows.filter((x) => x.kind === 'sub').sort((a, b) => a.ts.localeCompare(b.ts));
+    subs.forEach((r, i) => {
+      const from = Date.parse(r.ts), next = subs.slice(i + 1).find((x) => x.step === r.step), to = next ? Date.parse(next.ts) : Infinity;
+      const u = usage.filter((x) => x.step === r.step && x.at >= from && x.at < to).at(-1);
+      if (u) { r.provider = u.provider; r.model = u.model; r.source = 'log'; }
+    });
   }
   rows.sort((a, b) => a.ts.localeCompare(b.ts) || ((a.kind === 'sub' && b.kind === 'sub') ? a.step.localeCompare(b.step) : 0));
   // 並列の子（sub）は、そのフェーズ行を子の直下にまとめて木にする（子の中は時刻順。子どうしは開始順 → 名前順）。

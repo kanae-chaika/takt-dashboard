@@ -226,7 +226,7 @@ test('usage_events のログがあれば、並列の子は設定ではなくロ�
   assert.deepEqual(await subRows(s, runDir, 'flow-review'), [{ provider: 'opencode', model: null, source: 'log' }]);
 });
 
-test('同じ iteration で再実行した並列の子は、試行ごとに開始より後のログの記録が古い順に当たる', async (t) => {
+test('同じ iteration で再実行した並列の子は、試行ごとに、その開始から次の試行の開始までのログの記録が当たる', async (t) => {
   // Given: arch-review を 2 回実行（2 回目が @2 の行）。ログには 1 回目が codex、2 回目が claude で記録されている
   const box = makeSandbox(`provider:
   defaults:
@@ -242,6 +242,40 @@ test('同じ iteration で再実行した並列の子は、試行ごとに開始
     { provider: 'codex', model: 'gpt-5', source: 'log' },
     { provider: 'claude', model: 'sonnet', source: 'log' },
   ]);
+});
+
+test('記録の無い試行には、次の試行の記録を当てず設定の値のままにする', async (t) => {
+  // Given: arch-review を 2 回実行。1 回目は記録が無く（途中で落ちた）、2 回目の後にだけ記録がある
+  const box = makeSandbox(`provider:
+  defaults:
+    profile: base
+  profiles:
+    base: { provider: opencode, model: big }
+`);
+  const runDir = writeRun(box.repo, '20261101-100000-usage-missing', [['arch-review', 2], ['arch-review', 30]],
+    [['arch-review', 'claude', 'sonnet', 40]]);
+  const s = await start(t, box);
+
+  // When / Then: 1 回目は設定（opencode / big）、2 回目はログ（claude / sonnet）
+  assert.deepEqual(await subRows(s, runDir, 'arch-review'), [
+    { provider: 'opencode', model: 'big', source: 'runtime.yaml' },
+    { provider: 'claude', model: 'sonnet', source: 'log' },
+  ]);
+});
+
+test('1 回の試行に記録が複数あるときは、その試行の区間の最後の記録を使う', async (t) => {
+  // Given: arch-review の 1 回の実行中に、失敗の記録（codex）の後で完了の記録（claude）が書かれた
+  const box = makeSandbox(`provider:
+  defaults:
+    profile: base
+  profiles:
+    base: { provider: opencode, model: big }
+`);
+  const runDir = writeRun(box.repo, '20261101-100000-usage-multi', [['arch-review', 2]],
+    [['arch-review', 'codex', 'gpt-5', 10], ['arch-review', 'claude', 'opus', 20]]);
+  const s = await start(t, box);
+
+  assert.deepEqual(await subRows(s, runDir, 'arch-review'), [{ provider: 'claude', model: 'opus', source: 'log' }]);
 });
 
 test('ログの記録がまだ無い並列の子（実行中）は、設定から引いた値のまま', async (t) => {
