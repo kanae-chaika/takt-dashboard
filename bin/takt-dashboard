@@ -440,8 +440,10 @@ function timeline(runDir, routing, meta, stepTagsOf) {
         const provider = cur[1], model = cur[2] || null;
         actualPm[st] = { provider, model, source: 'log' };
         // 切替はリトライの開始と同じ瞬間なので、別の行にせず開始行の provider 欄に「切替前 → 切替後」として載せる。
-        // 通常ステップは step_start が先に来ているので直前の開始行に付け、並列の子は開始行がこの後に作られるので pending に置く
-        const startRow = rows.findLast((r) => (r.kind === 'step' || r.kind === 'sub') && r.step === st && Math.abs(new Date(ts) - new Date(r.ts)) <= 5000);
+        // 通常ステップは step_start が先に来ているので直前の開始行に付け、並列の子は開始行がこの後に作られるので pending に置く。
+        // 開始行は今の試行の key（並列の子のリトライは @n 付き）で探す。step 名だけで探すと、並列の子のリトライが前の試行の開始から
+        // 5 秒以内に始まったとき（子が全部すぐレート上限に当たった場合など。takt 0.74.0 の mock provider の run で再現）、前の試行の行に付いてしまう
+        const startRow = rows.findLast((r) => (r.kind === 'step' || r.kind === 'sub') && r.key === key && Math.abs(new Date(ts) - new Date(r.ts)) <= 5000);
         if (startRow) { startRow.switchFrom = from; startRow.provider = provider; startRow.model = model; startRow.source = 'log'; }
         else pendingSwitch[st] = { from, to, ts, top: started.has(base) };
       }

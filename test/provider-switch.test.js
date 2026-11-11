@@ -39,6 +39,28 @@ const subEvents = (ui) => [
   { type: 'phase_start', step: 'arch-review', iteration: 1, phaseName: 'execute', userInstruction: ui, timestamp: at(2) },
 ];
 
+// レート上限 → リトライ。takt 0.74.0 の mock provider で並列の子をレート上限にした run と同じ並び（親の step_start は同じ iteration で 2 回出る）。
+// 前の試行の開始から 5 秒以内にリトライが始まる（子が全部すぐレート上限に当たった場合など）
+const subRetryEvents = (ui) => [
+  { type: 'step_start', step: 'review', iteration: 1, provider: 'codex', model: 'gpt-5', timestamp: at(1) },
+  { type: 'phase_start', step: 'arch-review', iteration: 1, phaseName: 'execute', timestamp: at(2) },
+  { type: 'phase_complete', step: 'arch-review', iteration: 1, phaseName: 'execute', status: 'rate_limited', timestamp: at(2) },
+  { type: 'step_complete', step: 'review', iteration: 1, status: 'rate_limited', timestamp: at(3) },
+  { type: 'step_start', step: 'review', iteration: 1, provider: 'codex', model: 'gpt-5', timestamp: at(4) },
+  { type: 'phase_start', step: 'arch-review', iteration: 1, phaseName: 'execute', userInstruction: ui, timestamp: at(5) },
+  { type: 'phase_complete', step: 'arch-review', iteration: 1, phaseName: 'execute', status: 'done', timestamp: at(5) },
+  { type: 'step_complete', step: 'review', iteration: 1, status: 'done', timestamp: at(6) },
+];
+const stepRetryEvents = (ui) => [
+  { type: 'step_start', step: 'plan', iteration: 1, provider: 'codex', model: 'gpt-5', timestamp: at(1) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'execute', timestamp: at(1) },
+  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'execute', status: 'rate_limited', timestamp: at(2) },
+  { type: 'step_complete', step: 'plan', iteration: 1, status: 'rate_limited', timestamp: at(2) },
+  { type: 'step_start', step: 'plan', iteration: 1, provider: 'codex', model: 'gpt-5', timestamp: at(3) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'execute', userInstruction: ui, timestamp: at(3) },
+  { type: 'step_complete', step: 'plan', iteration: 1, status: 'done', timestamp: at(4) },
+];
+
 const CASES = {};
 let n = 0;
 function addCase(name, events) {
@@ -60,6 +82,8 @@ before(async () => {
     addCase(lang + '-sub', subEvents(notice(lang, ['codex', 'gpt-5'], ['claude', 'sonnet'])));
     addCase(lang + '-cur-empty', stepEvents(notice(lang, ['codex', 'gpt-5'], ['claude', null])));
     addCase(lang + '-prev-empty', stepEvents(notice(lang, ['claude', null], ['codex', 'gpt-5'])));
+    addCase(lang + '-sub-retry', subRetryEvents(notice(lang, ['codex', 'gpt-5'], ['claude', 'sonnet'])));
+    addCase(lang + '-step-retry', stepRetryEvents(notice(lang, ['codex', 'gpt-5'], ['claude', 'sonnet'])));
   }
   // PATH を空にして、手元にインストールされた takt 本体を読ませない
   server = await startDashboard({ cwd: REPO, home: HOME, env: { PATH: '' } });
@@ -70,14 +94,16 @@ after(async () => {
   fs.rmSync(ROOT, { recursive: true, force: true });
 });
 
-async function startRow(name, kind, step) {
+// 同じ step の開始行すべて（時刻順。リトライがあれば試行ごとに 1 行）
+async function startRows(name, kind, step) {
   const body = await (await fetch(server.base + '/api/state?run=' + encodeURIComponent(CASES[name]))).json();
   assert.equal(body.active?.runDir, CASES[name], 'run を開けた（前提）');
-  const row = body.timeline.find((r) => r.kind === kind && r.step === step);
-  assert.ok(row, kind + ' の行 ' + step + ': ' + JSON.stringify(body.timeline));
+  const rows = body.timeline.filter((r) => r.kind === kind && r.step === step);
+  assert.ok(rows.length, kind + ' の行 ' + step + ': ' + JSON.stringify(body.timeline));
   assert.equal(body.timeline.some((r) => r.kind === 'switch'), false, '切替は開始行に載り、別の行にならない');
-  return row;
+  return rows;
 }
+const startRow = async (name, kind, step) => (await startRows(name, kind, step))[0];
 const pmOf = (r) => ({ switchFrom: r.switchFrom ?? null, provider: r.provider, model: r.model, source: r.source });
 
 for (const [lang, label] of [['ja', '日本語'], ['en', '英語']]) {
@@ -95,5 +121,18 @@ for (const [lang, label] of [['ja', '日本語'], ['en', '英語']]) {
 
   test(label + 'の通知文: 切替前の model が空なら、切替前は provider 名だけ（次の行頭の「-」を model にしない）', async () => {
     assert.deepEqual(pmOf(await startRow(lang + '-prev-empty', 'step', 'plan')), { switchFrom: 'claude', provider: 'codex', model: 'gpt-5', source: 'log' });
+  });
+
+  test(label + 'の通知文: 並列の子のリトライが 5 秒以内に始まっても、切替はリトライの開始行に載り、前の試行の行には載らない', async () => {
+    const rows = await startRows(lang + '-sub-retry', 'sub', 'arch-review');
+    assert.deepEqual(rows.map((r) => [r.key, r.switchFrom ?? null]), [['arch-review#1', null], ['arch-review#1@2', 'codex/gpt-5']]);
+    assert.deepEqual(pmOf(rows[1]), { switchFrom: 'codex/gpt-5', provider: 'claude', model: 'sonnet', source: 'log' });
+  });
+
+  test(label + 'の通知文: 通常の step のリトライでも、切替はリトライの開始行に載り、前の試行の行には載らない', async () => {
+    const rows = await startRows(lang + '-step-retry', 'step', 'plan');
+    assert.deepEqual(rows.map((r) => r.switchFrom ?? null), [null, 'codex/gpt-5']);
+    assert.deepEqual(pmOf(rows[0]), { switchFrom: null, provider: 'codex', model: 'gpt-5', source: 'log' });
+    assert.deepEqual(pmOf(rows[1]), { switchFrom: 'codex/gpt-5', provider: 'claude', model: 'sonnet', source: 'log' });
   });
 }
