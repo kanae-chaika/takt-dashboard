@@ -260,7 +260,10 @@ function loadPage(localStorage = { getItem: () => null, setItem() {}, removeItem
   return { document, ctx, viewer: document.getElementById('viewer') };
 }
 
-async function waitFor(cond, what, ms = 1500) {
+// 待つ上限。条件が満たされた時点で抜けるので、通るテストの所要時間は変わらない。
+// 1.5 秒だと GitHub Actions の windows-latest で最初の描画が間に合わず落ちることがあった（1.9 秒かかった回がある）
+const WAIT_TIMEOUT_MS = 10000;
+async function waitFor(cond, what, ms = WAIT_TIMEOUT_MS) {
   const t0 = Date.now();
   while (!cond()) {
     if (Date.now() - t0 > ms) throw new Error(what + ' を待ったがタイムアウト');
