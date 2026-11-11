@@ -33,7 +33,7 @@ takt-dashboard           # → http://localhost:7331
 
 リポジトリで起動すると、そのリポジトリの `.takt/clone-meta/` と `.takt/tasks.yaml` から takt が作った worktree を辿って、run をまとめて一覧にします。`~/.takt`（`takt ui` から起動した run）も見ます。
 
-takt の環境変数 `TAKT_CONFIG_DIR` を設定している場合は、takt と同じく `~/.takt` の代わりにそのディレクトリを読みます。この README の `~/.takt` は、そのディレクトリに読み替えてください（`runtime.yaml` / `config.yaml` とそのバックアップ、`workflows/`、`takt ui` から起動した run）。ダッシュボードを起動するシェルにも同じ `TAKT_CONFIG_DIR` を設定しておいてください。
+takt の環境変数 `TAKT_CONFIG_DIR` を設定している場合は、takt と同じく `~/.takt` の代わりにそのディレクトリを読みます。この README の `~/.takt` は、そのディレクトリに読み替えてください（`runtime.yaml` / `config.yaml` とそのバックアップ、`workflows/`、`takt ui` から起動した run）。ダッシュボードを起動するシェルにも同じ `TAKT_CONFIG_DIR` を設定しておいてください。`TAKT_CONFIG_DIR` は絶対パスで指定してください。相対パスは takt とダッシュボードがそれぞれ起動時のカレントディレクトリから解決するので、起動したディレクトリが違うと別の場所を読みます。
 
 | オプション | 説明 |
 |---|---|
@@ -161,7 +161,7 @@ takt-dashboard           # → http://localhost:7331
 
 Started inside a repository, it follows the worktrees takt created (from `.takt/clone-meta/` and `.takt/tasks.yaml`) and lists all their runs, plus runs under `~/.takt` (started from `takt ui`).
 
-If you set takt's `TAKT_CONFIG_DIR` environment variable, the dashboard reads that directory instead of `~/.takt`, as takt does. Read every `~/.takt` in this README as that directory (`runtime.yaml` / `config.yaml` and their backups, `workflows/`, and runs started from `takt ui`). Set the same `TAKT_CONFIG_DIR` in the shell that starts the dashboard.
+If you set takt's `TAKT_CONFIG_DIR` environment variable, the dashboard reads that directory instead of `~/.takt`, as takt does. Read every `~/.takt` in this README as that directory (`runtime.yaml` / `config.yaml` and their backups, `workflows/`, and runs started from `takt ui`). Set the same `TAKT_CONFIG_DIR` in the shell that starts the dashboard. Use an absolute path: takt and the dashboard each resolve a relative path from the directory they were started in, so they read different places when started from different directories.
 
 | Option | Description |
 |---|---|

@@ -26,15 +26,15 @@ const runtimeYaml = (provider, model) => `provider:
     tags:
       review: { profile: rev }
 `;
-// 並列の子 tagged-review にだけ tag を付ける（tag は workflow yaml から引くので、workflows/ をどちらから読んだかが分かる）
-const WORKFLOW_YAML = `name: cfgwf
+// 並列の子のうち tagged にだけ tag を付けた workflow yaml。tag は workflow yaml から引くので、設定ディレクトリごとに tag を付ける子を変えておくと、
+// workflows/ をどちらから読んだかが分かる（TAKT_CONFIG_DIR 側は custom-tagged-review、~/.takt 側は home-tagged-review）
+const SUBS = ['custom-tagged-review', 'home-tagged-review'];
+const workflowYaml = (tagged) => `name: cfgwf
 steps:
   - name: reviewers
     parallel:
       fixed:
-        - name: tagged-review
-          tags: [review]
-        - name: plain-review
+${SUBS.map((name) => '        - name: ' + name + (name === tagged ? '\n          tags: [review]' : '')).join('\n')}
 `;
 
 // 親 reviewers の下で並列の子を 1 回ずつ実行した run
@@ -43,16 +43,16 @@ function writeRun(runDir, { workflow, task } = {}) {
   fs.mkdirSync(path.join(runDir, 'logs'), { recursive: true });
   fs.writeFileSync(path.join(runDir, 'meta.json'), JSON.stringify({ status: 'completed', runSlug: slug, currentStep: 'reviewers', startTime: START, updatedAt: at(300), ...(task ? { task } : {}) }));
   const events = [{ type: 'step_start', step: 'reviewers', iteration: 1, provider: 'claude', model: 'sonnet', timestamp: at(1) }];
-  for (const step of ['tagged-review', 'plain-review']) events.push({ type: 'phase_start', step, iteration: 1, phaseName: 'execute', timestamp: at(2), ...(workflow ? { workflow } : {}) });
+  for (const step of SUBS) events.push({ type: 'phase_start', step, iteration: 1, phaseName: 'execute', timestamp: at(2), ...(workflow ? { workflow } : {}) });
   fs.writeFileSync(path.join(runDir, 'logs', 'session-1.jsonl'), events.map((e) => JSON.stringify(e)).join('\n') + '\n');
   return runDir;
 }
 
 // takt の設定ディレクトリ 1 つ分: runtime.yaml・workflows/cfgwf.yaml・takt ui の run（state/projects/p1/runs/<slug>）
-function writeTaktDir(dir, { provider, model, uiSlug }) {
+function writeTaktDir(dir, { provider, model, tagged, uiSlug }) {
   fs.mkdirSync(path.join(dir, 'workflows'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'runtime.yaml'), runtimeYaml(provider, model));
-  fs.writeFileSync(path.join(dir, 'workflows', 'cfgwf.yaml'), WORKFLOW_YAML);
+  fs.writeFileSync(path.join(dir, 'workflows', 'cfgwf.yaml'), workflowYaml(tagged));
   return writeRun(path.join(dir, 'state', 'projects', 'p1', 'runs', uiSlug), { task: '# ' + uiSlug });
 }
 
@@ -64,8 +64,8 @@ function makeSandbox() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'takt-dashboard-cfgdir-')));
   sandboxes.push(root);
   const home = path.join(root, 'home'), repo = path.join(root, 'repo'), custom = path.join(root, 'custom-takt');
-  const homeUi = writeTaktDir(path.join(home, '.takt'), { provider: 'opencode', model: 'home', uiSlug: '20261101-100000-home-ui' });
-  const customUi = writeTaktDir(custom, { provider: 'codex', model: 'custom', uiSlug: '20261101-100000-custom-ui' });
+  const homeUi = writeTaktDir(path.join(home, '.takt'), { provider: 'opencode', model: 'home', tagged: 'home-tagged-review', uiSlug: '20261101-100000-home-ui' });
+  const customUi = writeTaktDir(custom, { provider: 'codex', model: 'custom', tagged: 'custom-tagged-review', uiSlug: '20261101-100000-custom-ui' });
   const run = writeRun(path.join(repo, '.takt', 'runs', '20261101-100000-cli'), { workflow: 'cfgwf' });
   return { home, repo, custom, homeUi, customUi, run };
 }
@@ -93,8 +93,8 @@ test('CFGDIR-SET: TAKT_CONFIG_DIR があれば、そこの runtime.yaml・workfl
   const s = await start(t, box, { TAKT_CONFIG_DIR: box.custom });
   const body = await getState(s, box.run);
   assert.deepEqual(subs(body), {
-    'tagged-review': { provider: 'codex', model: 'custom-review' },
-    'plain-review': { provider: 'codex', model: 'custom' },
+    'custom-tagged-review': { provider: 'codex', model: 'custom-review' },
+    'home-tagged-review': { provider: 'codex', model: 'custom' },
   });
   const listed = body.runs.map((r) => r.runDir);
   assert.ok(listed.includes(box.customUi), 'TAKT_CONFIG_DIR の takt ui の run が一覧にある');
@@ -108,8 +108,8 @@ test('CFGDIR-UNSET: TAKT_CONFIG_DIR が無ければ ~/.takt を読む', async (t
   const s = await start(t, box, {});
   const body = await getState(s, box.run);
   assert.deepEqual(subs(body), {
-    'tagged-review': { provider: 'opencode', model: 'home-review' },
-    'plain-review': { provider: 'opencode', model: 'home' },
+    'custom-tagged-review': { provider: 'opencode', model: 'home' },
+    'home-tagged-review': { provider: 'opencode', model: 'home-review' },
   });
   const listed = body.runs.map((r) => r.runDir);
   assert.ok(listed.includes(box.homeUi));
@@ -120,7 +120,7 @@ test('CFGDIR-EMPTY: TAKT_CONFIG_DIR が空文字なら、takt と同じく ~/.ta
   const box = makeSandbox();
   const s = await start(t, box, { TAKT_CONFIG_DIR: '' });
   const body = await getState(s, box.run);
-  assert.deepEqual(subs(body)['plain-review'], { provider: 'opencode', model: 'home' });
+  assert.deepEqual(subs(body)['custom-tagged-review'], { provider: 'opencode', model: 'home' });
   assert.ok(body.runs.some((r) => r.runDir === box.homeUi));
 });
 
@@ -128,7 +128,7 @@ test('CFGDIR-RELATIVE: TAKT_CONFIG_DIR が相対パスなら、起動時のカ�
   const box = makeSandbox();
   const s = await start(t, box, { TAKT_CONFIG_DIR: path.join('..', 'custom-takt') });
   const body = await getState(s, box.run);
-  assert.deepEqual(subs(body)['plain-review'], { provider: 'codex', model: 'custom' });
+  assert.deepEqual(subs(body)['home-tagged-review'], { provider: 'codex', model: 'custom' });
   // 一覧の runDir は絶対パス。takt ui の run の判定（絶対パスで照合）も通る
   assert.match(body.runs.find((r) => r.runDir === box.customUi)?.label ?? '', /^UI: /);
 });
@@ -143,5 +143,5 @@ test('CFGDIR-BACKUP: run 開始時点の設定のバックアップも TAKT_CONF
     fs.utimesSync(bak, replacedAt, replacedAt);
   }
   const s = await start(t, box, { TAKT_CONFIG_DIR: box.custom });
-  assert.deepEqual(subs(await getState(s, box.run))['plain-review'], { provider: 'copilot', model: 'old' });
+  assert.deepEqual(subs(await getState(s, box.run))['home-tagged-review'], { provider: 'copilot', model: 'old' });
 });
