@@ -30,6 +30,7 @@
 ## takt の用語（ログの読み方）
 
 - **run**: takt の 1 回の実行。`<root>/.takt/runs/<slug>/` に `meta.json`（status・currentStep・startTime など）・`logs/*.jsonl`（イベント）・`reports/*.md` が入る。`takt ui` から起動した run は `~/.takt/state/projects/<id>/runs/` にある
+- **takt の設定ディレクトリ**: `~/.takt`。環境変数 `TAKT_CONFIG_DIR` があればそのディレクトリ（takt の `getGlobalConfigDir()` と同じ決め方。サーバーでは `TAKT_DIR`）。この文書の `~/.takt` はこれを指す。`path.join(HOME, '.takt')` を直接書かず `TAKT_DIR` を使う
 - **step / iteration**: ワークフローのステップ（plan・implement など）と、その何周目か。タイムラインのキーは `step#iteration`
 - **phase**: step の中の execute → report → judge。judge の結果は `phase_complete`（phaseName が judge）の `content` に一致した rule のラベル（`approved` / `needs_fix` など）、理由は `phase_judge_stage` の `response`（structured output の JSON）に入る
 - **並列の子（sub）**: 並列ステップの子。イベントに provider / model が無いので、usage_events のログがあればそこから、無ければ run 開始時点の routing から引く（`ladder` / `pool` / `assignments` / `personas` のように設定から決まらないものは null）
@@ -67,7 +68,7 @@ npm run lint                 # ESLint（検査のみ）
 - `node:test` を使うので別のテストランナーは入れない
 - **push 前にローカルで `npm run lint` と `npm test` を通す。** CI（GitHub Actions）でも同じものが回るが、CI 待ちで直すのではなく手元で通してから push する
 - ESLint は検査だけで、formatter は無い。シングルクォート・セミコロンあり・1 行に詰める既存の書き方に揃える。ESLint の指摘を黙らせるルール追加は、既存の書き方を守るために必要な場合だけにする（既存の `allowEmptyCatch` / `no-regex-spaces` / `ignoreRestSiblings` がその例）
-- テストは実環境の `~/.takt` / `~/.config/takt-dashboard` を読まないよう、`HOME`（Windows では `os.homedir()` が見る `USERPROFILE` も）と cwd を一時ディレクトリにして起動する（起動・停止は `test/helpers.js` の `startDashboard` / `stopDashboard` を使う。`--port 0` で起動し、起動メッセージから実際のポートを読む）
+- テストは実環境の `~/.takt` / `~/.config/takt-dashboard` を読まないよう、`HOME`（Windows では `os.homedir()` が見る `USERPROFILE` も）と cwd を一時ディレクトリにし、`TAKT_CONFIG_DIR` を外して起動する（起動・停止は `test/helpers.js` の `startDashboard` / `stopDashboard` を使う。`--port 0` で起動し、起動メッセージから実際のポートを読む）
 - テストで run を作るときは `<root>/.takt/runs/<slug>/` に `meta.json` を置く（必須はこれだけ）。`logs/*.jsonl`・`reports/*.md` はそのテストで使う場合だけ作る
 - 手元に無い状況（失敗・レート上限による provider の切替・設定の書き方の違い）の本物のログは、takt の mock provider で作れる。LLM を呼ばず、ログは takt のエンジンが書く
   - 一時ディレクトリを `HOME`（Windows では `USERPROFILE` も）にし、`TAKT_CONFIG_DIR` をその下の `.takt` にして、そこの `runtime.yaml` の profile の provider を `mock` にする（実環境の `~/.takt` を読ませず、書き換えない）

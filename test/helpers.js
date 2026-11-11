@@ -8,11 +8,13 @@ const STARTUP_TIMEOUT_MS = 10000;
 
 // home は HOME にする一時ディレクトリ（実際の ~/.takt や ~/.config/takt-dashboard を読ませない）。env は追加・上書きする環境変数。
 // Windows の os.homedir() は HOME ではなく USERPROFILE を見るので、USERPROFILE にも同じ値を入れる（入れないと実際のホームを読む）。
+// TAKT_CONFIG_DIR は外す（テストを回す人が設定していると、HOME を差し替えても実際の takt の設定ディレクトリを読むため）。使うテストは env で渡す。
 // bin は起動するスクリプト（bin/ui/ を壊したコピーで起動するテスト用。リポジトリの bin/ui/ を書き換えずに済む）
 export function spawnDashboard({ cwd, home, args = [], env = {}, bin = BIN }) {
   const e = { ...process.env, HOME: home, USERPROFILE: home };
   delete e.TAKT_DASHBOARD_ROOTS;
   delete e.TAKT_DASHBOARD_PORT;
+  delete e.TAKT_CONFIG_DIR;
   Object.assign(e, env);
   const proc = spawn(process.execPath, [bin, '--port', '0', ...args], { cwd, env: e, stdio: ['ignore', 'pipe', 'pipe'] });
   // 'exit' の時点では stdout / stderr が読み終わっていないことがあるので、閉じた後の 'close' を待つ。
