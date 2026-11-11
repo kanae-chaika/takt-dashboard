@@ -35,7 +35,7 @@
 - **並列の子（sub）**: 並列ステップの子。イベントに provider / model が無いので、usage_events のログがあればそこから、無ければ run 開始時点の routing から引く（`ladder` / `pool` / `assignments` / `personas` のように設定から決まらないものは null）
 - 読んでいるイベント種別: `step_start` / `step_complete` / `phase_start` / `phase_complete` / `phase_judge_stage`
 - `logs/` には `type` の無い jsonl（`*-usage-events.jsonl` など）も書かれる。イベントとして読むのは `type` が文字列の記録だけ。`*-usage-events.jsonl`（takt の `logging.usage_events` が有効なときだけ書かれる）は、並列の子の実際の provider / model として別に読む
-- 対応している形式は takt **0.74.0** で確認したもの（実際の run のログで確認。provider の切替の通知文と `runtime.yaml` の `provider:` 配下の書き方は takt 0.74.0 のコードで確認）。takt 側の形式は実験的機能で予告なく変わる。形式に依存する箇所を直したときは README の「注意」のバージョンも見直す
+- 対応している形式は takt **0.74.0** で確認したもの（実際の run のログで確認。provider の切替の通知文と `runtime.yaml` の `provider:` 配下の書き方は、takt 0.74.0 の mock provider で作った run で確認）。takt 側の形式は実験的機能で予告なく変わる。形式に依存する箇所を直したときは README の「注意」のバージョンも見直す
 
 ## 設計方針（変えない）
 
@@ -69,6 +69,11 @@ npm run lint                 # ESLint（検査のみ）
 - ESLint は検査だけで、formatter は無い。シングルクォート・セミコロンあり・1 行に詰める既存の書き方に揃える。ESLint の指摘を黙らせるルール追加は、既存の書き方を守るために必要な場合だけにする（既存の `allowEmptyCatch` / `no-regex-spaces` / `ignoreRestSiblings` がその例）
 - テストは実環境の `~/.takt` / `~/.config/takt-dashboard` を読まないよう、`HOME`（Windows では `os.homedir()` が見る `USERPROFILE` も）と cwd を一時ディレクトリにして起動する（起動・停止は `test/helpers.js` の `startDashboard` / `stopDashboard` を使う。`--port 0` で起動し、起動メッセージから実際のポートを読む）
 - テストで run を作るときは `<root>/.takt/runs/<slug>/` に `meta.json` を置く（必須はこれだけ）。`logs/*.jsonl`・`reports/*.md` はそのテストで使う場合だけ作る
+- 手元に無い状況（失敗・レート上限による provider の切替・設定の書き方の違い）の本物のログは、takt の mock provider で作れる。LLM を呼ばず、ログは takt のエンジンが書く
+  - 一時ディレクトリを `HOME` にして、`~/.takt/runtime.yaml` の profile の provider を `mock` にする（実環境の `~/.takt` を書き換えない）
+  - 一時の git リポジトリで `takt -w <workflow> -t <タスク> --pipeline --skip-git -q` を実行する。並列の子の確認には組み込みの `compound-eye`（子 `eye1` / `eye2`）が使える
+  - 応答は環境変数 `TAKT_MOCK_SCENARIO` の JSON（`[{ persona, status, content, structured_output }]` の配列）で決める。judge は persona `conductor` で呼ばれる（`compound-eye` で確認）ので、`structured_output: { "step": 1, "reason": "…" }` で rule 1 に一致させる（無いと `rule_no_match` で失敗する）
+  - provider の切替は、`config.yaml` に `rate_limit_fallback.switch_chain` を書き、シナリオで `status: "rate_limited"` を返すと起きる
 
 ## コードの書き方
 
