@@ -33,6 +33,8 @@ takt-dashboard           # → http://localhost:7331
 
 リポジトリで起動すると、そのリポジトリの `.takt/clone-meta/` と `.takt/tasks.yaml` から takt が作った worktree を辿って、run をまとめて一覧にします。`~/.takt`（`takt ui` から起動した run）も見ます。
 
+takt の環境変数 `TAKT_CONFIG_DIR` を設定している場合は、takt と同じく `~/.takt` の代わりにそのディレクトリを読みます。この README の `~/.takt` は、そのディレクトリに読み替えてください（`runtime.yaml` / `config.yaml` とそのバックアップ、`workflows/`、`takt ui` から起動した run）。ダッシュボードを起動するシェルにも同じ `TAKT_CONFIG_DIR` を設定しておいてください。
+
 | オプション | 説明 |
 |---|---|
 | `--roots ~/dev,~/projects` | 複数のリポジトリをまとめて見たいとき。リポジトリをまとめて置いているディレクトリを指定すると、その直下のリポジトリと worktree の `.takt/runs` を見る。カンマ区切りで複数指定できる |
@@ -50,7 +52,7 @@ port: 7331
 
 ## ダッシュボードが使うディレクトリ
 
-`~/.config/takt-dashboard/` に自分のデータを置きます。takt 本体の `~/.takt/` には書き込みません。
+`~/.config/takt-dashboard/` に自分のデータを置きます。takt 本体の `~/.takt/`（`TAKT_CONFIG_DIR` を設定している場合はそのディレクトリ）には書き込みません。
 
 | ファイル | 内容 |
 |---|---|
@@ -159,13 +161,15 @@ takt-dashboard           # → http://localhost:7331
 
 Started inside a repository, it follows the worktrees takt created (from `.takt/clone-meta/` and `.takt/tasks.yaml`) and lists all their runs, plus runs under `~/.takt` (started from `takt ui`).
 
+If you set takt's `TAKT_CONFIG_DIR` environment variable, the dashboard reads that directory instead of `~/.takt`, as takt does. Read every `~/.takt` in this README as that directory (`runtime.yaml` / `config.yaml` and their backups, `workflows/`, and runs started from `takt ui`). Set the same `TAKT_CONFIG_DIR` in the shell that starts the dashboard.
+
 | Option | Description |
 |---|---|
 | `--roots ~/dev,~/projects` | To watch several repositories at once: give the directory that holds your repositories; its immediate subdirectories (repositories and worktrees) are checked for `.takt/runs`. Several directories can be given, comma-separated |
 | `--port N` | Port (default 7331) |
 | `<run_dir>` | Pin a specific run directory |
 
-Both can also be set with environment variables (`TAKT_DASHBOARD_ROOTS`, `TAKT_DASHBOARD_PORT`) or in `~/.config/takt-dashboard/config.yaml` (`roots:` list and `port:`); command line > environment > config file > defaults. The dashboard keeps its own data there (`routing/` snapshots, optional `takt-logo.svg` override) and never writes into takt's `~/.takt/`. The header logo is read from the installed takt package (`docs/assets/takt-logo-dark.svg`).
+Both can also be set with environment variables (`TAKT_DASHBOARD_ROOTS`, `TAKT_DASHBOARD_PORT`) or in `~/.config/takt-dashboard/config.yaml` (`roots:` list and `port:`); command line > environment > config file > defaults. The dashboard keeps its own data there (`routing/` snapshots, optional `takt-logo.svg` override) and never writes into takt's `~/.takt/` (or the `TAKT_CONFIG_DIR` directory). The header logo is read from the installed takt package (`docs/assets/takt-logo-dark.svg`).
 
 **Relation to the official Web UI**: takt's own Web UI (`takt ui`, `http://127.0.0.1:20525`) lists only the runs started from that UI. This dashboard lists all runs, including those started from the CLI (`takt run` / `takt watch`); UI-started runs are prefixed "UI:". The dashboard is read-only; task creation and branch/PR actions stay in the official UI. Both can run at the same time (different ports).
 
