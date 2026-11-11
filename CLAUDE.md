@@ -72,6 +72,7 @@ npm run lint                 # ESLint（検査のみ）
 - 手元に無い状況（失敗・レート上限による provider の切替・設定の書き方の違い）の本物のログは、takt の mock provider で作れる。LLM を呼ばず、ログは takt のエンジンが書く
   - 一時ディレクトリを `HOME`（Windows では `USERPROFILE` も）にし、`TAKT_CONFIG_DIR` をその下の `.takt` にして、そこの `runtime.yaml` の profile の provider を `mock` にする（実環境の `~/.takt` を読ませず、書き換えない）
     - takt は `TAKT_CONFIG_DIR` があれば `~/.takt` の代わりにそこを読む（takt 0.74.0 の `dist/infra/config/paths.js` の `getGlobalConfigDir`）。ダッシュボードは `~/.takt` を読むので、両方を同じ場所にそろえる
+    - 環境変数 `TAKT_PROVIDER` / `TAKT_MODEL` は外しておく。設定されていると `runtime.yaml` の割り当てより優先され、step ごとの割り当てもすべてその値になる（takt 0.74.0 の mock の run で確認）
   - 一時の git リポジトリで `takt -w <workflow> -t <タスク> --pipeline --skip-git -q` を実行する。並列の子の確認には組み込みの `compound-eye`（子 `eye1` / `eye2`）が使える
   - 応答は環境変数 `TAKT_MOCK_SCENARIO` の JSON（`[{ persona, status, content, structured_output }]` の配列）で決める。judge は persona `conductor` で呼ばれる（`compound-eye` で確認）ので、`structured_output: { "step": 1, "reason": "…" }` で rule 1 に一致させる（無いと `rule_no_match` で失敗する）
   - provider の切替は、`config.yaml` に `rate_limit_fallback.switch_chain` を書き、シナリオで `status: "rate_limited"` を返すと起きる
