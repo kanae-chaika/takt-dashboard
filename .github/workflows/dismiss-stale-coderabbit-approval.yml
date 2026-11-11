@@ -1,0 +1,36 @@
+# PR に push されたら、CodeRabbit が古いコミットに出した Approved を取り消す。
+# CodeRabbit の Approved は push 後も残り、再レビューが済むまで「最新のコミットがレビュー済み」に見えるため。
+# GitHub 標準の「新しいコミットで approve を取り消す」設定はブランチ保護の一部で、
+# 全ブランチに掛けると作業ブランチへ直接 push できなくなるので、ワークフローで行う。
+# pull_request_target にするのは、fork からの PR でも書き込みできるトークンで動かすため
+# （pull_request だと fork からの PR では読み取り専用になり取り消せない）。
+# PR のコードは checkout も実行もしない（pull_request_target で PR のコードを動かすとトークンを盗まれうる）
+name: CodeRabbit の古い approve を取り消す
+on:
+  pull_request_target:
+    types: [synchronize]
+# レビューの取り消しに要る権限だけにする
+permissions:
+  pull-requests: write
+jobs:
+  dismiss:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 最新のコミットより前に出た CodeRabbit の Approved を取り消す
+        # shell を明示すると pipefail が付き、レビュー一覧の取得に失敗したときにジョブが落ちる
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        # 最新のコミットに出た Approved は残す（このジョブより先に CodeRabbit の再レビューが済んだ場合）
+        run: |
+          gh api --paginate "repos/$REPO/pulls/$PR_NUMBER/reviews" \
+            --jq '.[] | select(.user.login == "coderabbitai[bot]" and .state == "APPROVED" and .commit_id != env.HEAD_SHA) | .id' |
+          while read -r review_id; do
+            gh api -X PUT "repos/$REPO/pulls/$PR_NUMBER/reviews/$review_id/dismissals" \
+              -f message='新しいコミットが push されたため、古いコミットへの approve を取り消しました。' \
+              -f event=DISMISS --silent || exit 1
+            echo "取り消したレビュー: $review_id"
+          done
