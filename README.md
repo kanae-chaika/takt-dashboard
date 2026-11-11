@@ -111,7 +111,7 @@ takt 本体の Web UI（`takt ui`、`http://127.0.0.1:20525`）が一覧に出�
 
 ## 注意
 
-- TAKT の Web UI と run のログ形式は「実験的機能」で、予告なく変わります。takt **0.74.0** のログで動作確認しています。provider の切替の通知文（日本語・英語）と `runtime.yaml` の `provider:` 配下の書き方は、takt 0.74.0 の mock provider（LLM を呼ばないテスト用の provider）で作った run で確認しています。追従は約束しません
+- TAKT の Web UI と run のログ形式は「実験的機能」で、予告なく変わります。takt **0.74.0** と **0.75.0** の実際の run のログで動作確認しています。provider の切替の通知文（日本語・英語）と `runtime.yaml` の `provider:` 配下の書き方は、takt 0.74.0 の mock provider（LLM を呼ばないテスト用の provider）で作った run で確認しています。0.75.0 の mock provider で作った run（完了・失敗・レート上限による provider の切替）も、0.74.0 と同じ表示になることを確認しています。追従は約束しません
 - run のデータは worktree 側の `.takt/runs/` にあります。`takt list` でタスクを削除すると、その run はダッシュボードからも消えます
 - ローカル専用です（`localhost` にしか bind しません）。認証はありません
 - UI は日本語のみ。英語は予定
@@ -175,7 +175,7 @@ Both can also be set with environment variables (`TAKT_DASHBOARD_ROOTS`, `TAKT_D
 
 **Viewing a run from another machine**: copy its run directory (`.takt/runs/<run>/` with `logs/`, `meta.json`, `reports/`) and open it with `takt-dashboard /path/to/<run>` or `?run=/path/to/<run>`. Paths inside `meta.json` are relative, so location does not matter. `?run=` does not accept network paths (starting with two `\` or `/`, such as `\\host\share\…` or `//host/share/…`); they are reported as not found. Copy such a run to a local disk or pass it as `<run_dir>` instead. Runs already in the list (for example via `--roots`) open even when their path is a network path. Bring that machine's `~/.config/takt-dashboard/routing/<run>.json` along to show the providers it actually used for parallel children.
 
-**Caveats**: the UI text is Japanese only for now (English is planned). TAKT's run log format is experimental and may change; verified against takt 0.74.0 logs; provider-switch notices (Japanese and English) and the `provider:` section of `runtime.yaml` were checked with runs made by takt 0.74.0's mock provider (a test provider that does not call an LLM). Run data lives in each worktree's `.takt/runs/`, so deleting a task in `takt list` removes it from the dashboard too. Binds to localhost only, no authentication.
+**Caveats**: the UI text is Japanese only for now (English is planned). TAKT's run log format is experimental and may change; verified against logs of real runs made with takt 0.74.0 and 0.75.0; provider-switch notices (Japanese and English) and the `provider:` section of `runtime.yaml` were checked with runs made by takt 0.74.0's mock provider (a test provider that does not call an LLM), and runs made with 0.75.0's mock provider (a completed run, a failed run, and a provider switch on a rate limit) are displayed the same as with 0.74.0. Run data lives in each worktree's `.takt/runs/`, so deleting a task in `takt list` removes it from the dashboard too. Binds to localhost only, no authentication.
 
 **Development (not needed for normal use)**: only if you want to modify the dashboard itself, clone the repository and run `npm link` instead of `npm install -g`; the `takt-dashboard` command then points at your checkout. `npm install` brings in the dev tooling (there are no runtime dependencies); `npm test` runs the tests and `npm run lint` runs ESLint. The dev tooling (ESLint 10) needs Node.js 20.19+, 22.13+ or 24+ (21 and 23 are not supported); running the dashboard itself only needs Node.js 20+.
 
