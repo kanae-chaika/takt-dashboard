@@ -14,6 +14,7 @@
 | `.coderabbit.yaml` | CodeRabbit の設定（日本語・assertive・draft PR もレビュー） |
 | `eslint.config.js` | ESLint の設定（検査のみ。サーバー・テストは Node.js の ESM、`bin/ui/app.js` はブラウザのグローバルな script として読む） |
 | `.github/workflows/ci.yml` | CI。push / PR ごとに `npm run lint` と `npm test` を ubuntu / windows / macos × Node 20 / 22 で回す |
+| `.github/workflows/dismiss-stale-coderabbit-approval.yml` | PR に push されたら、CodeRabbit が古いコミットに出した Approved を取り消す（最新のコミットへの Approved は残す） |
 
 `bin/takt-dashboard` と `bin/ui/app.js` の中は `// ---------- 見出し ----------` でセクション分けされている（サーバー: 設定 / run 探索 / 中断判定 / routing / タイムライン / レポート / tasks.yaml / state / HTML / サーバー）。コードを足すときは該当セクションに入れる。
 
