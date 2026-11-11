@@ -12,15 +12,15 @@ TAKT の公式ツールではなく、TAKT プロジェクトとは関係のな�
 
 ## できること
 
-- **タイムライン**: ステップの開始・完了を時刻順に。並列ステップは子ごとに木にして、execute / report / judge の終了時刻を並べる
-- **判定結果**: 各ステップ・子の judge 結果（`approved` / `needs_fix` / 一致した rule 名）を行に表示。クリックで judge の理由（structured output の reason）を開く
-- **実行経路**: 公式 Web UI の実行経路に似たカード + ポート + 曲線の図。並列は枠の中に子を縦に並べ、リトライは枠が 2 つ並ぶ
-- **レート上限・リトライ**: `rate_limited` で中断 → リトライした経緯と、provider の切替（`codex/gpt-5 → claude/sonnet`）を開始行に表示
-- **中断・失敗**: プロセスが落ちて `running` のまま残った run を「中断」と判定し、どのステップで止まったかを終了行に出す。失敗は理由（`rule_no_match` など）と judge のエラーログ付き
-- **provider / model**: 並列の子はイベントに provider が無いので、takt の usage_events のログがあればそこから、無ければ run 開始時点の `~/.takt/runtime.yaml`（または `config.yaml`）から引く（詳しくは「過去の run の provider / model を正しく出すために」）。run ごとに結果を保存するので、後から yaml を変えても過去の表示は変わらない
-  - takt 本体と同じく `targets.steps` → `targets.tags` → `defaults` の順で引く。step の tag は workflow yaml の step の `tags:` から取り、これも run ごとに保存する
-- **レポート**: run の `reports/*.md` をステップに紐づけて一覧。クリックで本文を表示
-- 複数リポジトリ・worktree の run をまとめて一覧。2 秒ごとに自動更新
+- **タイムライン**: ステップの開始・完了を時刻順に。並列ステップは子ごとに木にして、execute / report / judge の終了時刻を並べる。
+- **判定結果**: 各ステップ・子の judge 結果（`approved` / `needs_fix` / 一致した rule 名）を行に表示。クリックで judge の理由（structured output の reason）を開く。
+- **実行経路**: 公式 Web UI の実行経路に似たカード + ポート + 曲線の図。並列は枠の中に子を縦に並べ、リトライは枠が 2 つ並ぶ。
+- **レート上限・リトライ**: `rate_limited` で中断 → リトライした経緯と、provider の切替（`codex/gpt-5 → claude/sonnet`）を開始行に表示。
+- **中断・失敗**: プロセスが落ちて `running` のまま残った run を「中断」と判定し、どのステップで止まったかを終了行に出す。失敗は理由（`rule_no_match` など）と judge のエラーログ付き。
+- **provider / model**: 並列の子はイベントに provider が無いので、takt の usage_events のログがあればそこから、無ければ run 開始時点の `~/.takt/runtime.yaml`（または `config.yaml`）から引く（詳しくは「過去の run の provider / model を正しく出すために」）。run ごとに結果を保存するので、後から yaml を変えても過去の表示は変わらない。
+  - takt 本体と同じく `targets.steps` → `targets.tags` → `defaults` の順で引く。step の tag は workflow yaml の step の `tags:` から取り、これも run ごとに保存する。
+- **レポート**: run の `reports/*.md` をステップに紐づけて一覧。クリックで本文を表示。
+- 複数リポジトリ・worktree の run をまとめて一覧。2 秒ごとに自動更新。
 
 ## 使い方
 
@@ -69,16 +69,16 @@ takt-dashboard /path/to/<run>          # この run だけを表示
 # いつもの画面で開くなら  http://localhost:7331/?run=/path/to/<run>
 ```
 
-- `meta.json` の中のパスは相対なので、置き場所は自由です
-- `?run=` には、`\\host\share\…` や `//host/share/…` のようなネットワーク上のパス（先頭が `\` か `/` 2 つ）は指定できません（「指定した run が見つかりません」になります）。ネットワーク上の run は、手元にコピーして開くか、`<run_dir>` で指定してください。`--roots` などで一覧に入っている run は、ネットワーク上のパスでも開けます
-- 並列の子ステップの provider / model は、回したマシンの `~/.config/takt-dashboard/routing/<run>.json` を一緒にもらって同じ場所に置くと正しく出ます。無ければ手元の設定から引いた値になります
+- `meta.json` の中のパスは相対なので、置き場所は自由です。
+- `?run=` には、`\\host\share\…` や `//host/share/…` のようなネットワーク上のパス（先頭が `\` か `/` 2 つ）は指定できません（「指定した run が見つかりません」になります）。ネットワーク上の run は、手元にコピーして開くか、`<run_dir>` で指定してください。`--roots` などで一覧に入っている run は、ネットワーク上のパスでも開けます。
+- 並列の子ステップの provider / model は、回したマシンの `~/.config/takt-dashboard/routing/<run>.json` を一緒にもらって同じ場所に置くと、回したマシンと同じ表示になります。この控えは、回したマシンが設定から引いた値です（設定のバックアップがあれば run 開始時点の設定、無ければ控えを作った時点の設定から引きます。設定から決まらないものは「?」）。無ければ手元の設定から引いた値になります。run のログに usage_events の記録があれば、どちらの場合もその値を優先します。
 
 ## 過去の run の provider / model を正しく出すために
 
 並列の子ステップは、takt の実行ログ（`logs/*.jsonl` のイベント）に provider / model が記録されません。ダッシュボードは次の順で引きます。
 
-1. takt の設定（`~/.takt/config.yaml`）で `logging.usage_events: true` にしている場合: 子の実行が終わるたびに、実際に使った provider / model が `logs/*-usage-events.jsonl` に書かれます。ダッシュボードはこれを最優先で使います（既定はオフ）
-2. それ以外（実行中でまだ記録が無い子を含む）: 設定ファイル（`~/.takt/runtime.yaml` または `config.yaml`）から引きます
+1. takt の設定（`~/.takt/config.yaml`）で `logging.usage_events: true` にしている場合: 子の実行が終わるたびに、実際に使った provider / model が `logs/*-usage-events.jsonl` に書かれます。ダッシュボードはこれを最優先で使います（既定はオフ）。
+2. それ以外（実行中でまだ記録が無い子を含む）: 設定ファイル（`~/.takt/runtime.yaml` または `config.yaml`）から引きます。
 
 ```yaml
 # ~/.takt/config.yaml
@@ -89,7 +89,7 @@ logging:
 `runtime.yaml` が次の書き方のときは、実際に使われた provider / model が設定からは決まらないので「?」と表示します（hover で理由を表示）。正確に出したい場合は `logging.usage_events` を有効にしてください。
 
 - `ladder`（実行中に次の profile へ昇格することがある）・`pool`（実行時に router が選ぶ）
-- `assignments`（名前付きの割り当て。実行時にどれを使うか選ばれる）
+- `assignments`（名前付きの割り当て・実行時にどれを使うか選ばれる）
 - `targets.personas`（`targets.steps` / `targets.tags` で名指ししていない step）
 
 設定から引く場合、設定を後から変えると過去の run の表示が変わってしまいます。これを避けるため、`~/.takt/runtime.yaml` や `config.yaml` を変更するときは、変更前のファイルを次の名前で残しておくと、ダッシュボードが「run 開始時点で有効だった設定」を自動で選びます。
@@ -111,10 +111,10 @@ takt 本体の Web UI（`takt ui`、`http://127.0.0.1:20525`）が一覧に出�
 
 ## 注意
 
-- TAKT の Web UI と run のログ形式は「実験的機能」で、予告なく変わります。takt **0.74.0** と **0.75.0** の実際の run のログで動作確認しています。provider の切替の通知文（日本語・英語）と `runtime.yaml` の `provider:` 配下の書き方は、takt 0.74.0 の mock provider（LLM を呼ばないテスト用の provider）で作った run で確認しています。0.75.0 の mock provider で作った run（完了・失敗・レート上限による provider の切替）も、0.74.0 と同じ表示になることを確認しています。追従は約束しません
-- run のデータは worktree 側の `.takt/runs/` にあります。`takt list` でタスクを削除すると、その run はダッシュボードからも消えます
-- ローカル専用です（`localhost` にしか bind しません）。認証はありません
-- UI は日本語のみ。英語は予定
+- TAKT の Web UI と run のログ形式は「実験的機能」で、予告なく変わります。takt **0.74.0** と **0.75.0** の実際の run のログで動作確認しています。provider の切替の通知文（日本語・英語）と `runtime.yaml` の `provider:` 配下の書き方は、takt 0.74.0 の mock provider（LLM を呼ばないテスト用の provider）で作った run で確認しています。0.75.0 の mock provider で作った run（完了・失敗・レート上限による provider の切替）も、0.74.0 と同じ表示になることを確認しています。追従は約束しません。
+- run のデータは worktree 側の `.takt/runs/` にあります。`takt list` でタスクを削除すると、その run はダッシュボードからも消えます。
+- ローカル専用です（`localhost` にしか bind しません）。認証はありません。
+- UI は日本語のみ。英語は予定。
 
 ## 開発する場合（通常は不要）
 
@@ -173,7 +173,7 @@ Both can also be set with environment variables (`TAKT_DASHBOARD_ROOTS`, `TAKT_D
 
 **Relation to the official Web UI**: takt's own Web UI (`takt ui`, `http://127.0.0.1:20525`) lists only the runs started from that UI. This dashboard lists all runs, including those started from the CLI (`takt run` / `takt watch`); UI-started runs are prefixed "UI:". The dashboard is read-only; task creation and branch/PR actions stay in the official UI. Both can run at the same time (different ports).
 
-**Viewing a run from another machine**: copy its run directory (`.takt/runs/<run>/` with `logs/`, `meta.json`, `reports/`) and open it with `takt-dashboard /path/to/<run>` or `?run=/path/to/<run>`. Paths inside `meta.json` are relative, so location does not matter. `?run=` does not accept network paths (starting with two `\` or `/`, such as `\\host\share\…` or `//host/share/…`); they are reported as not found. Copy such a run to a local disk or pass it as `<run_dir>` instead. Runs already in the list (for example via `--roots`) open even when their path is a network path. Bring that machine's `~/.config/takt-dashboard/routing/<run>.json` along to show the providers it actually used for parallel children.
+**Viewing a run from another machine**: copy its run directory (`.takt/runs/<run>/` with `logs/`, `meta.json`, `reports/`) and open it with `takt-dashboard /path/to/<run>` or `?run=/path/to/<run>`. Paths inside `meta.json` are relative, so location does not matter. `?run=` does not accept network paths (starting with two `\` or `/`, such as `\\host\share\…` or `//host/share/…`); they are reported as not found. Copy such a run to a local disk or pass it as `<run_dir>` instead. Runs already in the list (for example via `--roots`) open even when their path is a network path. Bring that machine's `~/.config/takt-dashboard/routing/<run>.json` along to show parallel children's providers the same way as on that machine. That file holds what that machine resolved from its config (the config as of the run's start when dated backups exist, otherwise the config at the time the file was written; "?" where the config does not determine it); without it, the values come from your local config. When the run's logs contain usage events, those take precedence in both cases.
 
 **Caveats**: the UI text is Japanese only for now (English is planned). TAKT's run log format is experimental and may change; verified against logs of real runs made with takt 0.74.0 and 0.75.0; provider-switch notices (Japanese and English) and the `provider:` section of `runtime.yaml` were checked with runs made by takt 0.74.0's mock provider (a test provider that does not call an LLM), and runs made with 0.75.0's mock provider (a completed run, a failed run, and a provider switch on a rate limit) are displayed the same as with 0.74.0. Run data lives in each worktree's `.takt/runs/`, so deleting a task in `takt list` removes it from the dashboard too. Binds to localhost only, no authentication.
 
