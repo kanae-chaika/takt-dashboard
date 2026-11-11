@@ -1,6 +1,6 @@
 {
   "name": "takt-dashboard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Unofficial local web dashboard for watching TAKT (nrslib/takt) runs: timeline, judge results, execution path",
   "type": "module",
   "bin": { "takt-dashboard": "bin/takt-dashboard" },
