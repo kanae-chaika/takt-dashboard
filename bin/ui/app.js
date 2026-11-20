@@ -157,7 +157,9 @@ function rowHtml(r, i){
   if (r.kind==='sub')  return '<tr'+(i===LATEST?' class="latest"':'')+'><td class="ts">'+jst(r.ts)+'</td><td class="sub">├▶ '+esc(r.step)+'</td><td class="pm">'+pm(r)+'</td><td class="reps" colspan="2">'+repLinks(r)+'</td></tr>';
   if (r.kind==='phase') {
     // エラーは本文を長々と出さず、「エラー」リンク + 先頭 80 文字。全文はクリックでモーダル
-    const tail = '<td>'+esc(r.phase)+' → '+esc(r.status)+'</td><td colspan="2">'+(r.error?judgeLink(r, i)+' <span class="err">'+esc(r.error.slice(0,80))+(r.error.length>80?'…':'')+'</span>':judgeLink(r, i))+'</td></tr>';
+    // レポートのリンクは report フェーズの終了行に出す（開始行と同じ列）。リンクが無い行は td にクラスを付けず、今までの折り返しのまま
+    const reps = repLinks(r);
+    const tail = '<td>'+esc(r.phase)+' → '+esc(r.status)+'</td><td'+(reps?' class="reps"':'')+' colspan="2">'+(r.error?judgeLink(r, i)+' <span class="err">'+esc(r.error.slice(0,80))+(r.error.length>80?'…':'')+'</span>':judgeLink(r, i))+(reps?' '+reps:'')+'</td></tr>';
     // 木の中の行: 左端の時刻列は空け、枝（├ / └）の後ろに終了時刻を置く（左端に時刻があるのは開始・完了の行だけ）
     if (r.tree && r.status!=='rate_limited') return '<tr class="phase'+(i===LATEST?' latest':'')+'"><td class="ts"></td><td class="sub">&nbsp;&nbsp;&nbsp;&nbsp;'+r.tree+'<span class="ts">'+jst(r.ts)+'</span></td>'+tail;
     return '<tr class="'+(r.status==='rate_limited'?'warn':'phase')+(i===LATEST?' latest':'')+'"><td class="ts">'+jst(r.ts)+'</td><td class="sub">'+(r.status==='rate_limited'?'⚠':'│')+' '+esc(r.step)+'</td>'+tail;
@@ -165,9 +167,11 @@ function rowHtml(r, i){
   if (r.kind==='switch') return '<tr class="warn"><td class="ts">'+jst(r.ts)+'</td><td class="'+(r.top?'step':'sub')+'">⚠ '+esc(r.step)+'</td><td class="pm" colspan="3">'+esc(r.from)+' → <b>'+esc(r.to)+'</b></td></tr>';
   if (r.kind==='done') {
     const rl = r.status==='rate_limited';
+    // レポートのリンクは完了の行に出す。判定を provider の列、リンクを開始行のリンクと同じ列に置く。リンクが無い行は今までどおり 1 つのセル
+    const reps = repLinks(r);
     const label = rl ? 'rate_limited'+(r.rateProvider?'（'+esc(r.rateProvider)+'）':'')+' → リトライ'
                      : '→ '+esc(r.status);
-    return '<tr class="'+(rl?'warn':(r.status==='done'?'done':'alert'))+(i===LATEST?' latest':'')+'"><td class="ts">'+jst(r.ts)+'</td><td class="step">'+(rl?'⚠':'■')+' '+esc(r.step)+' <span style="font-weight:normal">'+label+'</span></td><td colspan="3">'+judgeLink(r, i)+'</td></tr>';
+    return '<tr class="'+(rl?'warn':(r.status==='done'?'done':'alert'))+(i===LATEST?' latest':'')+'"><td class="ts">'+jst(r.ts)+'</td><td class="step">'+(rl?'⚠':'■')+' '+esc(r.step)+' <span style="font-weight:normal">'+label+'</span></td>'+(reps?'<td>'+judgeLink(r, i)+'</td><td class="reps" colspan="2">'+reps+'</td>':'<td colspan="3">'+judgeLink(r, i)+'</td>')+'</tr>';
   }
   if (r.kind==='end') {
     const intr = r.status==='interrupted';
