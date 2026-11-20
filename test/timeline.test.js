@@ -3,7 +3,7 @@
 // - 並列の子のリトライ: 同じ iteration のまま execute から走り直すと、2 回目以降を別の試行として key に @n を付ける
 // - レポートの紐づけ: mtime が report フェーズの時間帯（無ければ step 全体の時間帯）に入る iteration の行に付ける
 // - レポートを付ける行: 終了行（通常ステップは完了の行、並列の子は report フェーズの終了の行）。
-//   終了行が無いステップは、終わった run なら開始行、実行中の run ならどこにも出さない
+//   終了行が無いステップは、終わった run なら開始行、実行中の run なら書かれてから 10 分たつまでどこにも出さない
 // - takt の内部用ディレクトリ（.takt-report-internal/。reports 直下にも subworkflows の中にもできる）の .md はレポートとして拾わない
 // HOME と cwd は一時ディレクトリにし、PATH を空にして手元の takt 本体を読ませない
 import { test, before, after } from 'node:test';
@@ -19,10 +19,10 @@ const REPO = path.join(ROOT, 'repo');
 const RUNS = path.join(REPO, '.takt', 'runs');
 
 const START = '2026-11-01T10:00:00.000Z';
-const at = (sec) => new Date(Date.parse(START) + sec * 1000).toISOString();
+const at = (sec, base = START) => new Date(Date.parse(base) + sec * 1000).toISOString();
 
 // meta.json に workflow は入れない（並列の子の tag を workflow yaml から引く経路に入れないため）。status の既定は completed（end 行を作らない）
-function writeRun(slug, events, reportFiles = {}, status = 'completed') {
+function writeRun(slug, events, reportFiles = {}, status = 'completed', base = START) {
   const runDir = path.join(RUNS, slug);
   fs.mkdirSync(path.join(runDir, 'logs'), { recursive: true });
   fs.writeFileSync(path.join(runDir, 'meta.json'), JSON.stringify({ status, runSlug: slug, startTime: START, updatedAt: at(300) }));
@@ -32,7 +32,7 @@ function writeRun(slug, events, reportFiles = {}, status = 'completed') {
     const p = path.join(runDir, 'reports', rel);
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p, '# ' + rel + '\n');
-    const d = new Date(at(sec));
+    const d = new Date(at(sec, base));
     fs.utimesSync(p, d, d);
   }
   return runDir;
@@ -105,29 +105,34 @@ const INTERNAL_FILES = {
 // step_complete の timestamp は実際のログと同じく execute の終了時刻にする（report フェーズより前）
 const RUN_END_ROW = path.join(RUNS, '20261101-100500-end-row');
 const SUB_REPORT = path.join('subworkflows', 'x', 'arch-review.md');
-const END_ROW_EVENTS = [
-  { type: 'step_start', step: 'plan', iteration: 1, provider: 'claude', model: 'sonnet', timestamp: at(0) },
-  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'execute', timestamp: at(1) },
-  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'execute', status: 'done', timestamp: at(10) },
-  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'report', timestamp: at(11) },
-  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'report', status: 'done', timestamp: at(20) },
-  { type: 'step_complete', step: 'plan', iteration: 1, status: 'done', timestamp: at(10) },
-  { type: 'step_start', step: 'reviewers', iteration: 2, provider: 'claude', model: 'sonnet', timestamp: at(100) },
-  { type: 'phase_start', step: 'arch-review', iteration: 2, phaseName: 'execute', timestamp: at(101) },
-  { type: 'phase_complete', step: 'arch-review', iteration: 2, phaseName: 'execute', status: 'done', timestamp: at(110) },
-  { type: 'phase_start', step: 'arch-review', iteration: 2, phaseName: 'report', timestamp: at(111) },
-  { type: 'phase_complete', step: 'arch-review', iteration: 2, phaseName: 'report', status: 'done', timestamp: at(120) },
-  { type: 'phase_start', step: 'arch-review', iteration: 2, phaseName: 'judge', timestamp: at(121) },
-  { type: 'phase_complete', step: 'arch-review', iteration: 2, phaseName: 'judge', status: 'done', timestamp: at(125) },
-  { type: 'step_complete', step: 'reviewers', iteration: 2, status: 'done', timestamp: at(125) },
-  { type: 'step_start', step: 'fix', iteration: 3, provider: 'claude', model: 'sonnet', timestamp: at(200) },
-  { type: 'phase_start', step: 'fix', iteration: 3, phaseName: 'execute', timestamp: at(201) },
-  { type: 'phase_complete', step: 'fix', iteration: 3, phaseName: 'execute', status: 'done', timestamp: at(210) },
-  { type: 'phase_start', step: 'fix', iteration: 3, phaseName: 'report', timestamp: at(211) },
-  { type: 'phase_complete', step: 'fix', iteration: 3, phaseName: 'report', status: 'done', timestamp: at(220) },
+const endRowEvents = (base = START) => [
+  { type: 'step_start', step: 'plan', iteration: 1, provider: 'claude', model: 'sonnet', timestamp: at(0, base) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'execute', timestamp: at(1, base) },
+  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'execute', status: 'done', timestamp: at(10, base) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'report', timestamp: at(11, base) },
+  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'report', status: 'done', timestamp: at(20, base) },
+  { type: 'step_complete', step: 'plan', iteration: 1, status: 'done', timestamp: at(10, base) },
+  { type: 'step_start', step: 'reviewers', iteration: 2, provider: 'claude', model: 'sonnet', timestamp: at(100, base) },
+  { type: 'phase_start', step: 'arch-review', iteration: 2, phaseName: 'execute', timestamp: at(101, base) },
+  { type: 'phase_complete', step: 'arch-review', iteration: 2, phaseName: 'execute', status: 'done', timestamp: at(110, base) },
+  { type: 'phase_start', step: 'arch-review', iteration: 2, phaseName: 'report', timestamp: at(111, base) },
+  { type: 'phase_complete', step: 'arch-review', iteration: 2, phaseName: 'report', status: 'done', timestamp: at(120, base) },
+  { type: 'phase_start', step: 'arch-review', iteration: 2, phaseName: 'judge', timestamp: at(121, base) },
+  { type: 'phase_complete', step: 'arch-review', iteration: 2, phaseName: 'judge', status: 'done', timestamp: at(125, base) },
+  { type: 'step_complete', step: 'reviewers', iteration: 2, status: 'done', timestamp: at(125, base) },
+  { type: 'step_start', step: 'fix', iteration: 3, provider: 'claude', model: 'sonnet', timestamp: at(200, base) },
+  { type: 'phase_start', step: 'fix', iteration: 3, phaseName: 'execute', timestamp: at(201, base) },
+  { type: 'phase_complete', step: 'fix', iteration: 3, phaseName: 'execute', status: 'done', timestamp: at(210, base) },
+  { type: 'phase_start', step: 'fix', iteration: 3, phaseName: 'report', timestamp: at(211, base) },
+  { type: 'phase_complete', step: 'fix', iteration: 3, phaseName: 'report', status: 'done', timestamp: at(220, base) },
 ];
-// 同じイベントとレポートで、status が running の run（fix が judge の途中）。tasks.yaml が無いので中断とは判定されず running のまま
+const END_ROW_EVENTS = endRowEvents();
+// 同じイベントとレポートで、status が running の run。tasks.yaml が無いので中断とは判定されず running のまま。
+// RUNNING は時刻を今から 230 秒前を起点にする（fix.md が書かれたのは 10 秒前。fix が judge の途中）。
+// STALE は時刻が START のまま（fix.md が書かれてから 10 分以上たっている。中断したのに running のままの run）
 const RUN_END_ROW_RUNNING = path.join(RUNS, '20261101-100550-end-row-running');
+const RUN_END_ROW_STALE = path.join(RUNS, '20261101-100560-end-row-stale');
+const RECENT = new Date(Date.now() - 230 * 1000).toISOString();
 
 // 通常ステップ plan がレート上限で中断し、同じ iteration のままリトライして完了した run。同じ key（plan#1）に開始行と完了の行が 2 つずつできる。
 // レポートを書くのはリトライの report フェーズ（61 〜 70）
@@ -160,7 +165,8 @@ before(async () => {
   writeRun(path.basename(RUN_PHASE_FIRST), PHASE_FIRST_EVENTS, { [ITER1]: 23 });
   writeRun(path.basename(RUN_INTERNAL), planEvents(true), { 'plan.md': 19, [SUB_PLAN]: 19, 'other.md': 250, ...INTERNAL_FILES });
   writeRun(path.basename(RUN_END_ROW), END_ROW_EVENTS, { 'plan.md': 20, [SUB_REPORT]: 120, 'fix.md': 220 });
-  writeRun(path.basename(RUN_END_ROW_RUNNING), END_ROW_EVENTS, { 'plan.md': 20, [SUB_REPORT]: 120, 'fix.md': 220 }, 'running');
+  writeRun(path.basename(RUN_END_ROW_RUNNING), endRowEvents(RECENT), { 'plan.md': 20, [SUB_REPORT]: 120, 'fix.md': 220 }, 'running', RECENT);
+  writeRun(path.basename(RUN_END_ROW_STALE), END_ROW_EVENTS, { 'plan.md': 20, [SUB_REPORT]: 120, 'fix.md': 220 }, 'running');
   writeRun(path.basename(RUN_RETRY_STEP), RETRY_STEP_EVENTS, { 'plan.md': 70 });
   writeRun(path.basename(RUN_STEM), planEvents(true), { 'plan.md': 250 });
   server = await startDashboard({ cwd: REPO, home: HOME, env: { PATH: '', TAKT_DASHBOARD_ROOTS: '' } });
@@ -262,6 +268,12 @@ test('mtime がどの step の時間帯にも入らないレポートは、フ�
   const timeline = await getTimeline(RUN_STEM);
   assert.deepEqual(reportsOf(timeline, 'plan#1'), []);
   assert.deepEqual(reportsOf(timeline, 'plan#2'), ['plan.md']);
+});
+
+test('実行中のままの run でも、書かれてから 10 分以上たったレポートは開始行に付く', async () => {
+  // Given: fix の report フェーズが 10 分以上前に終わり、step_complete が無いまま status が running の run（中断と判定できない run）
+  const timeline = await getTimeline(RUN_END_ROW_STALE);
+  assert.deepEqual(reportsByRow(timeline, 'step', 'fix#3'), [['fix.md']]);
 });
 
 // ---------- takt の内部用ディレクトリ（.takt-report-internal/） ----------
