@@ -766,7 +766,7 @@ function runList(active, limit, all, taskCache) {
   if (active && !top.some((r) => r.runDir === active.runDir)) { const me = all.find((r) => r.runDir === active.runDir) ?? active; top.unshift(me); }
   const list = top.map((r) => {
     const t = taskForRoot(r.root, taskCache);
-    return { runDir: r.runDir, status: r.meta.status, slug: r.meta.runSlug, step: r.meta.currentStep, updatedAt: r.meta.updatedAt, label: t ? (t.summary || t.name) : (r.label ?? null) };
+    return { runDir: r.runDir, status: r.meta.status, slug: r.meta.runSlug, step: r.meta.currentStep, startTime: r.meta.startTime, updatedAt: r.meta.updatedAt, label: t ? (t.summary || t.name) : (r.label ?? null) };
   });
   list.total = all.length;
   return list;

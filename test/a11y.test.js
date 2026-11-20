@@ -621,6 +621,33 @@ test('run の一覧のラベルから slug の日時プレフィックス（YYYY
   assert.ok(!label.includes('20261029-100000-'), label);
 });
 
+// 表示はブラウザのタイムゾーンなので、期待値もテストを動かす環境のタイムゾーンで作る
+const localStart = (ts, hasYear) => { const d = new Date(ts), p = (n) => String(n).padStart(2, '0'); return (hasYear ? d.getFullYear() + '/' : '') + p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); };
+
+test('run の一覧のラベルに、開始の日付と時刻（分まで・年なし）が出る', async () => {
+  const page = await renderedPage();
+  const label = page.document.getElementById('runsel').innerHTML.match(/>([^<]*)<\/option>/)[1];
+  assert.ok(label.includes('(' + localStart(META.startTime, false)), label);
+  assert.ok(!/\d{2}:\d{2}:\d{2}/.test(label), '秒は出さない: ' + label);
+});
+
+test('タスク欄に「開始」の行があり、年付きの日付と時刻（分まで）が出る', async () => {
+  const page = await renderedPage();
+  const html = page.document.getElementById('app').innerHTML;
+  assert.ok(html.includes('<span class="k">開始</span><span>' + localStart(META.startTime, true) + '</span>'), html.match(/<span class="k">開始<\/span>[^/]*\/span>/)?.[0]);
+});
+
+test('startTime が無い run は、開始の日時を出さずに描画できる（一覧のラベル・タスク欄とも）', async () => {
+  const page = await renderedPage();
+  const st = JSON.parse(await (await fetch(server.base + '/api/state')).text());
+  delete st.active.meta.startTime; for (const r of st.runs) delete r.startTime;
+  stubState(page, () => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(st)) }));
+  await page.ctx.tick();
+  const label = page.document.getElementById('runsel').innerHTML.match(/>([^<]*)<\/option>/)[1];
+  assert.ok(label.includes('a11y') && !label.includes('Invalid') && !label.includes('NaN'), label);
+  assert.ok(!page.document.getElementById('app').innerHTML.includes('<span class="k">開始</span>'));
+});
+
 test('レポートの取得を待つ間に run を選び直したら、遅れて届いたレポートでモーダルを開かない', async () => {
   const page = await renderedPage();
   const d = page.document;
