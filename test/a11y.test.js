@@ -621,6 +621,60 @@ test('run の一覧のラベルから slug の日時プレフィックス（YYYY
   assert.ok(!label.includes('20261029-100000-'), label);
 });
 
+// 表示はブラウザのタイムゾーンなので、期待値もテストを動かす環境のタイムゾーンで作る
+const localStart = (ts, hasYear) => { const d = new Date(ts), p = (n) => String(n).padStart(2, '0'); return (hasYear ? d.getFullYear() + '/' : '') + p(d.getMonth() + 1) + '/' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()); };
+
+test('run の一覧のラベルに、開始の日付と時刻（分まで・年なし）が出る', async () => {
+  const page = await renderedPage();
+  const label = page.document.getElementById('runsel').innerHTML.match(/>([^<]*)<\/option>/)[1];
+  assert.ok(label.includes('(' + localStart(META.startTime, false)), label);
+  assert.ok(!/\d{2}:\d{2}:\d{2}/.test(label), '秒は出さない: ' + label);
+});
+
+test('タスク欄に「開始」の行があり、年付きの日付と時刻（分まで）が出る', async () => {
+  const page = await renderedPage();
+  const html = page.document.getElementById('app').innerHTML;
+  assert.ok(html.includes('<span class="k">開始</span><span>' + localStart(META.startTime, true) + '</span>'), html.match(/<span class="k">開始<\/span>[^/]*\/span>/)?.[0]);
+});
+
+test('startTime が無い run は、開始の日時を出さずに描画できる（一覧のラベル・タスク欄とも）', async () => {
+  const page = await renderedPage();
+  const st = JSON.parse(await (await fetch(server.base + '/api/state')).text());
+  delete st.active.meta.startTime; for (const r of st.runs) delete r.startTime;
+  stubState(page, () => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(st)) }));
+  await page.ctx.tick();
+  const label = page.document.getElementById('runsel').innerHTML.match(/>([^<]*)<\/option>/)[1];
+  assert.ok(label.includes('a11y') && !label.includes('Invalid') && !label.includes('NaN'), label);
+  const html = page.document.getElementById('app').innerHTML;
+  assert.ok(!html.includes('<span class="k">開始</span>'));
+  // 開始が分からないと経過時間も出せないので、行ごと出さない（NaN分NaN秒 と出さない）
+  assert.ok(!html.includes('経過時間') && !html.includes('NaN'), html.match(/[^>]*NaN[^<]*/)?.[0]);
+});
+
+test('選択中の run の startTime が日時に変換できない値でも、タスク欄を描画できる（開始・経過時間の行は出さない）', async () => {
+  // routing の控えが既にある run では、サーバーは startTime を変換せずに返すので、この値がそのまま画面に届く
+  const page = await renderedPage();
+  const st = JSON.parse(await (await fetch(server.base + '/api/state')).text());
+  st.active.meta.startTime = { toString: null }; // new Date({ toString: null }) は TypeError になる
+  st.active.meta.workflow = 'redrawn'; // 描き直されたことを見分ける印
+  stubState(page, () => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(st)) }));
+  await page.ctx.tick();
+  const html = page.document.getElementById('app').innerHTML;
+  assert.ok(html.includes('redrawn'), '#app が描き直されている');
+  assert.ok(!html.includes('<span class="k">開始</span>') && !html.includes('経過時間'));
+  await page.ctx.tick(); // 同じ応答の 2 回目（経過時間だけを更新する経路）でも例外にならない
+});
+
+test('一覧の run の startTime が日時に変換できない値（new Date が例外を投げる値）でも、一覧を描画できる', async () => {
+  const page = await renderedPage();
+  const st = JSON.parse(await (await fetch(server.base + '/api/state')).text());
+  for (const r of st.runs) r.startTime = { toString: null }; // new Date({ toString: null }) は TypeError になる
+  stubState(page, () => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(st)) }));
+  await page.ctx.tick();
+  const label = page.document.getElementById('runsel').innerHTML.match(/>([^<]*)<\/option>/)?.[1] ?? '';
+  assert.ok(label.includes('a11y') && !/\d{2}\/\d{2} \d{2}:\d{2}/.test(label), label);
+});
+
 test('レポートの取得を待つ間に run を選び直したら、遅れて届いたレポートでモーダルを開かない', async () => {
   const page = await renderedPage();
   const d = page.document;
