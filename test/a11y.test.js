@@ -645,7 +645,24 @@ test('startTime が無い run は、開始の日時を出さずに描画でき�
   await page.ctx.tick();
   const label = page.document.getElementById('runsel').innerHTML.match(/>([^<]*)<\/option>/)[1];
   assert.ok(label.includes('a11y') && !label.includes('Invalid') && !label.includes('NaN'), label);
-  assert.ok(!page.document.getElementById('app').innerHTML.includes('<span class="k">開始</span>'));
+  const html = page.document.getElementById('app').innerHTML;
+  assert.ok(!html.includes('<span class="k">開始</span>'));
+  // 開始が分からないと経過時間も出せないので、行ごと出さない（NaN分NaN秒 と出さない）
+  assert.ok(!html.includes('経過時間') && !html.includes('NaN'), html.match(/[^>]*NaN[^<]*/)?.[0]);
+});
+
+test('選択中の run の startTime が日時に変換できない値でも、タスク欄を描画できる（開始・経過時間の行は出さない）', async () => {
+  // routing の控えが既にある run では、サーバーは startTime を変換せずに返すので、この値がそのまま画面に届く
+  const page = await renderedPage();
+  const st = JSON.parse(await (await fetch(server.base + '/api/state')).text());
+  st.active.meta.startTime = { toString: null }; // new Date({ toString: null }) は TypeError になる
+  st.active.meta.workflow = 'redrawn'; // 描き直されたことを見分ける印
+  stubState(page, () => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(st)) }));
+  await page.ctx.tick();
+  const html = page.document.getElementById('app').innerHTML;
+  assert.ok(html.includes('redrawn'), '#app が描き直されている');
+  assert.ok(!html.includes('<span class="k">開始</span>') && !html.includes('経過時間'));
+  await page.ctx.tick(); // 同じ応答の 2 回目（経過時間だけを更新する経路）でも例外にならない
 });
 
 test('一覧の run の startTime が日時に変換できない値（new Date が例外を投げる値）でも、一覧を描画できる', async () => {

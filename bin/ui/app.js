@@ -9,7 +9,8 @@ let TL = []; // 描画中のタイムライン行（判定の詳細をクリッ�
 let LATEST = -1; // TL の中で一番新しい行の index
 const jst = (ts) => ts ? new Date(ts).toLocaleTimeString('ja-JP', { hour12:false }) : '';
 // 開始日時。分まで（一覧で run を見分けるのに秒は要らない）。jst と同じくブラウザのタイムゾーンで出す。meta.json に startTime が無い・日時として読めない run は空にする（文字列・数値以外は Date に渡さない。{"toString":null} のような値は new Date が例外を投げ、一覧の描画が止まるため）
-const startAt = (ts, hasYear) => { const d = ts && (typeof ts === 'string' || typeof ts === 'number') ? new Date(ts) : null; if (!d || isNaN(d)) return ''; const p = (n) => String(n).padStart(2,'0'); return (hasYear ? d.getFullYear()+'/' : '') + p(d.getMonth()+1)+'/'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()); };
+const startMs = (ts) => ts && (typeof ts === 'string' || typeof ts === 'number') ? new Date(ts).getTime() : NaN;
+const startAt = (ts, hasYear) => { const d = new Date(startMs(ts)); if (isNaN(d)) return ''; const p = (n) => String(n).padStart(2,'0'); return (hasYear ? d.getFullYear()+'/' : '') + p(d.getMonth()+1)+'/'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()); };
 const fmt = (ms) => { const s=Math.max(0,Math.floor(ms/1000)); return Math.floor(s/60)+'分'+String(s%60).padStart(2,'0')+'秒'; };
 // ログに provider/model の記録が無い行（並列の子）は設定から引いた値。表示は同じにし、出どころは title（hover）だけで示す
 function pm(r){
@@ -282,7 +283,7 @@ async function tick(){
   shownSeq = seq;
   if (raw === lastRaw) {
     const el = document.getElementById('elapsed');
-    if (el && lastMeta && lastMeta.status === 'running') el.textContent = fmt(Date.now() - new Date(lastMeta.startTime).getTime());
+    if (el && lastMeta && lastMeta.status === 'running') el.textContent = fmt(Date.now() - startMs(lastMeta.startTime));
     return;
   }
   lastRaw = raw;
@@ -331,8 +332,7 @@ async function tick(){
       <div class="row"><span class="k">ワークフロー</span><span>${esc(m.workflow)}</span></div>
       <div class="row"><span class="k">イテレーション</span><span>${esc(m.currentIteration)} / ${MAX ?? '?'}</span></div>
       <div class="bar"><div style="width:${pct}%"></div></div>
-      ${startAt(m.startTime, true) ? '<div class="row" style="margin-top:8px"><span class="k">開始</span><span>'+startAt(m.startTime, true)+'</span></div>' : ''}
-      <div class="row"${startAt(m.startTime, true) ? '' : ' style="margin-top:8px"'}><span class="k">経過時間</span><span id="elapsed">${fmt(end - new Date(m.startTime).getTime())}</span></div>
+      ${startAt(m.startTime, true) ? '<div class="row" style="margin-top:8px"><span class="k">開始</span><span>'+startAt(m.startTime, true)+'</span></div><div class="row"><span class="k">経過時間</span><span id="elapsed">'+fmt(end - startMs(m.startTime))+'</span></div>' : ''}
       ${(m.resume_point?.stack ?? []).length > 1 ? '<div class="stack">'+stack+'</div>' : ''}
       ${a.reports.length ? '<h2 style="margin-top:14px">未分類のレポート</h2><div id="reps" class="scroll" style="overflow:auto;max-height:160px">'+a.reports.slice().reverse().map(r => '<div class="row"><button type="button" class="rep" data-rel="'+escA(r.rel)+'">'+esc(r.rel)+'</button><span class="k">'+r.size+' B</span></div>').join('')+'</div>' : ''}
     </section>
