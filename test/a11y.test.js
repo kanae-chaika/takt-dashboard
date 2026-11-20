@@ -648,6 +648,16 @@ test('startTime が無い run は、開始の日時を出さずに描画でき�
   assert.ok(!page.document.getElementById('app').innerHTML.includes('<span class="k">開始</span>'));
 });
 
+test('一覧の run の startTime が日時に変換できない値（new Date が例外を投げる値）でも、一覧を描画できる', async () => {
+  const page = await renderedPage();
+  const st = JSON.parse(await (await fetch(server.base + '/api/state')).text());
+  for (const r of st.runs) r.startTime = { toString: null }; // new Date({ toString: null }) は TypeError になる
+  stubState(page, () => Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify(st)) }));
+  await page.ctx.tick();
+  const label = page.document.getElementById('runsel').innerHTML.match(/>([^<]*)<\/option>/)?.[1] ?? '';
+  assert.ok(label.includes('a11y') && !/\d{2}\/\d{2} \d{2}:\d{2}/.test(label), label);
+});
+
 test('レポートの取得を待つ間に run を選び直したら、遅れて届いたレポートでモーダルを開かない', async () => {
   const page = await renderedPage();
   const d = page.document;

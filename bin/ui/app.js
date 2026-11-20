@@ -8,8 +8,8 @@ document.addEventListener('click', (e) => {
 let TL = []; // 描画中のタイムライン行（判定の詳細をクリックで開くために保持）
 let LATEST = -1; // TL の中で一番新しい行の index
 const jst = (ts) => ts ? new Date(ts).toLocaleTimeString('ja-JP', { hour12:false }) : '';
-// 開始日時。分まで（一覧で run を見分けるのに秒は要らない）。jst と同じくブラウザのタイムゾーンで出す。meta.json に startTime が無い・日時として読めない run は空にする
-const startAt = (ts, hasYear) => { const d = ts ? new Date(ts) : null; if (!d || isNaN(d)) return ''; const p = (n) => String(n).padStart(2,'0'); return (hasYear ? d.getFullYear()+'/' : '') + p(d.getMonth()+1)+'/'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()); };
+// 開始日時。分まで（一覧で run を見分けるのに秒は要らない）。jst と同じくブラウザのタイムゾーンで出す。meta.json に startTime が無い・日時として読めない run は空にする（文字列・数値以外は Date に渡さない。{"toString":null} のような値は new Date が例外を投げ、一覧の描画が止まるため）
+const startAt = (ts, hasYear) => { const d = ts && (typeof ts === 'string' || typeof ts === 'number') ? new Date(ts) : null; if (!d || isNaN(d)) return ''; const p = (n) => String(n).padStart(2,'0'); return (hasYear ? d.getFullYear()+'/' : '') + p(d.getMonth()+1)+'/'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes()); };
 const fmt = (ms) => { const s=Math.max(0,Math.floor(ms/1000)); return Math.floor(s/60)+'分'+String(s%60).padStart(2,'0')+'秒'; };
 // ログに provider/model の記録が無い行（並列の子）は設定から引いた値。表示は同じにし、出どころは title（hover）だけで示す
 function pm(r){
