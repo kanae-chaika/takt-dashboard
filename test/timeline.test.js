@@ -2,7 +2,8 @@
 // /api/state の timeline の行の組み立てを確かめる。
 // - 並列の子のリトライ: 同じ iteration のまま execute から走り直すと、2 回目以降を別の試行として key に @n を付ける
 // - レポートの紐づけ: mtime が report フェーズの時間帯（無ければ step 全体の時間帯）に入る iteration の行に付ける
-// - レポートを付ける行: 終了行（通常ステップは完了の行、並列の子は report フェーズの終了の行）。終了行が無ければ開始行
+// - レポートを付ける行: 終了行（通常ステップは完了の行、並列の子は report フェーズの終了の行）。
+//   終了行が無いステップは、終わった run なら開始行、実行中の run ならどこにも出さない
 // - takt の内部用ディレクトリ（.takt-report-internal/。reports 直下にも subworkflows の中にもできる）の .md はレポートとして拾わない
 // HOME と cwd は一時ディレクトリにし、PATH を空にして手元の takt 本体を読ませない
 import { test, before, after } from 'node:test';
@@ -20,11 +21,11 @@ const RUNS = path.join(REPO, '.takt', 'runs');
 const START = '2026-11-01T10:00:00.000Z';
 const at = (sec) => new Date(Date.parse(START) + sec * 1000).toISOString();
 
-// meta.json に workflow は入れない（並列の子の tag を workflow yaml から引く経路に入れないため）。status は completed（end 行を作らない）
-function writeRun(slug, events, reportFiles = {}) {
+// meta.json に workflow は入れない（並列の子の tag を workflow yaml から引く経路に入れないため）。status の既定は completed（end 行を作らない）
+function writeRun(slug, events, reportFiles = {}, status = 'completed') {
   const runDir = path.join(RUNS, slug);
   fs.mkdirSync(path.join(runDir, 'logs'), { recursive: true });
-  fs.writeFileSync(path.join(runDir, 'meta.json'), JSON.stringify({ status: 'completed', runSlug: slug, startTime: START, updatedAt: at(300) }));
+  fs.writeFileSync(path.join(runDir, 'meta.json'), JSON.stringify({ status, runSlug: slug, startTime: START, updatedAt: at(300) }));
   fs.writeFileSync(path.join(runDir, 'logs', 'run.jsonl'), events.map((e) => JSON.stringify(e)).join('\n') + '\n');
   // reportFiles は { reports からの相対パス: mtime の秒（at に渡す値） }
   for (const [rel, sec] of Object.entries(reportFiles)) {
@@ -125,6 +126,8 @@ const END_ROW_EVENTS = [
   { type: 'phase_start', step: 'fix', iteration: 3, phaseName: 'report', timestamp: at(211) },
   { type: 'phase_complete', step: 'fix', iteration: 3, phaseName: 'report', status: 'done', timestamp: at(220) },
 ];
+// 同じイベントとレポートで、status が running の run（fix が judge の途中）。tasks.yaml が無いので中断とは判定されず running のまま
+const RUN_END_ROW_RUNNING = path.join(RUNS, '20261101-100550-end-row-running');
 
 // 通常ステップ plan がレート上限で中断し、同じ iteration のままリトライして完了した run。同じ key（plan#1）に開始行と完了の行が 2 つずつできる。
 // レポートを書くのはリトライの report フェーズ（61 〜 70）
@@ -157,6 +160,7 @@ before(async () => {
   writeRun(path.basename(RUN_PHASE_FIRST), PHASE_FIRST_EVENTS, { [ITER1]: 23 });
   writeRun(path.basename(RUN_INTERNAL), planEvents(true), { 'plan.md': 19, [SUB_PLAN]: 19, 'other.md': 250, ...INTERNAL_FILES });
   writeRun(path.basename(RUN_END_ROW), END_ROW_EVENTS, { 'plan.md': 20, [SUB_REPORT]: 120, 'fix.md': 220 });
+  writeRun(path.basename(RUN_END_ROW_RUNNING), END_ROW_EVENTS, { 'plan.md': 20, [SUB_REPORT]: 120, 'fix.md': 220 }, 'running');
   writeRun(path.basename(RUN_RETRY_STEP), RETRY_STEP_EVENTS, { 'plan.md': 70 });
   writeRun(path.basename(RUN_STEM), planEvents(true), { 'plan.md': 250 });
   server = await startDashboard({ cwd: REPO, home: HOME, env: { PATH: '', TAKT_DASHBOARD_ROOTS: '' } });
@@ -232,11 +236,19 @@ test('並列の子のレポートは report フェーズの終了行に付き、
   assert.deepEqual(reportsByRow(timeline, 'sub', 'arch-review#2'), [[]]);
 });
 
-test('完了の行がまだ無いステップのレポートは開始行に付く', async () => {
-  // Given: fix の report フェーズまで終わり、step_complete がまだ書かれていない run（judge の途中・中断）
+test('終わった run で完了の行が無いステップのレポートは開始行に付く', async () => {
+  // Given: fix の report フェーズまで終わり、step_complete が書かれないまま終わった run
   const timeline = await getTimeline(RUN_END_ROW);
   assert.deepEqual(reportsByRow(timeline, 'done', 'fix#3'), []);
   assert.deepEqual(reportsByRow(timeline, 'step', 'fix#3'), [['fix.md']]);
+});
+
+test('実行中の run で完了の行がまだ無いステップのレポートは、開始行にも未分類にも出ない', async () => {
+  // Given: fix の report フェーズまで終わり、step_complete がまだ書かれていない実行中の run（judge の途中）
+  const state = await getState(RUN_END_ROW_RUNNING);
+  // Then: fix.md はどこにも出ない（完了の行ができてから出す）。終了行があるステップのレポートは実行中でも出る
+  assert.deepEqual(state.timeline.flatMap((r) => r.reports ?? []).sort(), ['plan.md', SUB_REPORT].sort());
+  assert.deepEqual(state.active.reports.map((r) => r.rel), []);
 });
 
 test('レート上限で中断してリトライしたステップのレポートは、リトライの完了の行に付く', async () => {
