@@ -150,6 +150,20 @@ const RETRY_STEP_EVENTS = [
   { type: 'step_complete', step: 'plan', iteration: 1, status: 'done', timestamp: at(60) },
 ];
 
+// 通常ステップ plan の 1 回目の試行が report フェーズ（2 〜 3）でレポートを書いた直後に judge でレート上限に当たり、
+// 4 秒にリトライが始まって execute の途中の run。リトライの開始は report フェーズの開始から 5 秒以内
+const RUN_RETRY_SOON = path.join(RUNS, '20261101-100650-retry-soon');
+const RETRY_SOON_EVENTS = [
+  { type: 'step_start', step: 'plan', iteration: 1, provider: 'claude', model: 'sonnet', timestamp: at(0) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'execute', timestamp: at(1) },
+  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'execute', status: 'done', timestamp: at(2) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'report', timestamp: at(2) },
+  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'report', status: 'done', timestamp: at(3) },
+  { type: 'step_complete', step: 'plan', iteration: 1, status: 'rate_limited', timestamp: at(2) },
+  { type: 'step_start', step: 'plan', iteration: 1, provider: 'claude', model: 'sonnet', timestamp: at(4) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'execute', timestamp: at(5) },
+];
+
 // planEvents(true) の run に、どの step の時間帯にも入らない mtime（250 秒）の plan.md を置く（run フォルダをコピーして mtime が変わった場合）
 const RUN_STEM = path.join(RUNS, '20261101-100700-stem');
 
@@ -168,6 +182,7 @@ before(async () => {
   writeRun(path.basename(RUN_END_ROW_RUNNING), endRowEvents(RECENT), { 'plan.md': 20, [SUB_REPORT]: 120, 'fix.md': 220 }, 'running', RECENT);
   writeRun(path.basename(RUN_END_ROW_STALE), END_ROW_EVENTS, { 'plan.md': 20, [SUB_REPORT]: 120, 'fix.md': 220 }, 'running');
   writeRun(path.basename(RUN_RETRY_STEP), RETRY_STEP_EVENTS, { 'plan.md': 70 });
+  writeRun(path.basename(RUN_RETRY_SOON), RETRY_SOON_EVENTS, { 'plan.md': 3 });
   writeRun(path.basename(RUN_STEM), planEvents(true), { 'plan.md': 250 });
   server = await startDashboard({ cwd: REPO, home: HOME, env: { PATH: '', TAKT_DASHBOARD_ROOTS: '' } });
 });
@@ -261,6 +276,14 @@ test('レート上限で中断してリトライしたステップのレポー�
   const timeline = await getTimeline(RUN_RETRY_STEP);
   // 同じ key の完了の行は、中断（rate_limited）→ 完了（done）の順に 2 つ。開始行 2 つには付かない
   assert.deepEqual(timeline.filter((r) => r.kind === 'done' && r.key === 'plan#1').map((r) => [r.status, r.reports ?? []]), [['rate_limited', []], ['done', ['plan.md']]]);
+  assert.deepEqual(reportsByRow(timeline, 'step', 'plan#1'), [[], []]);
+});
+
+test('レポートを書いた直後にリトライが始まっても、レポートは書いた試行の終了行に付く', async () => {
+  // Given: 1 回目の試行が 3 秒にレポートを書き、4 秒にリトライが始まった run（リトライには終了行がまだ無い）
+  const timeline = await getTimeline(RUN_RETRY_SOON);
+  // Then: 1 回目の試行の終了行（rate_limited）に付く。リトライの開始行には付かない
+  assert.deepEqual(timeline.filter((r) => r.kind === 'done' && r.key === 'plan#1').map((r) => [r.status, r.reports ?? []]), [['rate_limited', ['plan.md']]]);
   assert.deepEqual(reportsByRow(timeline, 'step', 'plan#1'), [[], []]);
 });
 

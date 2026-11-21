@@ -566,7 +566,8 @@ function timeline(runDir, routing, meta, stepTagsOf) {
     let row = null;
     if (best) {
       const starts = rows.filter((x) => x.key === best && isStartRow(x));
-      const i = Math.max(0, starts.findLastIndex((x) => ms(x.ts) <= at + 5000));
+      // at より後に始まった試行は選ばない（余裕を持たせると、レポートを書いた直後に始まったリトライを選び、書いた試行の終了行に付かなくなる）
+      const i = Math.max(0, starts.findLastIndex((x) => ms(x.ts) <= at));
       const start = starts[i], next = starts[i + 1];
       if (start) row = rows.find((x) => x.key === best && isEndRow(x) && x.ts >= start.ts && (!next || x.ts < next.ts)) ?? start;
     }
