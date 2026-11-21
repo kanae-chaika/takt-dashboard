@@ -464,10 +464,10 @@ function timeline(runDir, routing, meta, stepTagsOf) {
     }
     if (t === 'step_start') {
       started.add(key);
-      rows.push({ ts, kind: 'step', key, step: st, workflow: e.workflow, iteration: it, provider: e.provider, model: e.model ?? null, source: 'log', reports: [] });
+      rows.push({ ts, kind: 'step', key, step: st, workflow: e.workflow, iteration: it, provider: e.provider, model: e.model ?? null, source: 'log' });
     } else if (t === 'phase_start' && e.phaseName === 'execute' && !started.has(key) && !subSeen.has(key)) {
       subSeen.add(key);
-      const subRow = { ts, kind: 'sub', key, step: st, workflow: e.workflow, iteration: it, ...(actualPm[st] ?? cfgPm(st, e.workflow || meta.workflow)), reports: [] };
+      const subRow = { ts, kind: 'sub', key, step: st, workflow: e.workflow, iteration: it, ...(actualPm[st] ?? cfgPm(st, e.workflow || meta.workflow)) };
       if (pendingSwitch[st]) { subRow.switchFrom = pendingSwitch[st].from; delete pendingSwitch[st]; }
       rows.push(subRow);
     } else if (t === 'phase_complete') {
@@ -523,19 +523,30 @@ function timeline(runDir, routing, meta, stepTagsOf) {
     if (r.status === 'done' && (r.kind === 'done' || (r.kind === 'phase' && r.phase === 'judge'))) r.judge = judges[r.key] ?? null;
     if (r.status && r.status !== 'done' && (r.kind === 'done' || r.kind === 'phase') && errors[r.key]) r.errors = errors[r.key];
   }
-  // レポートを所属 step に紐づけ（mtime が step の時間帯 ±5秒に入るもの。複数候補なら最も遅く始まった step）
+  // レポートを所属 step に紐づけ（mtime が step の時間帯 ±5秒に入るもの。複数候補なら最も遅く始まった step）。
+  // リンクは終了行に付ける: 通常ステップは完了の行（done）、並列の子は report フェーズの終了の行。ファイルは report フェーズの末尾で書かれるので、
+  // 開始行に付けると、時刻順の表で「開始した時点でレポートがあった」ように見える。
+  // 終了行が無いステップのレポートは、実行中の run では出さない（未分類にも入れない）。judge が終わると終了行ができるので、
+  // 先に開始行に出すと、いったん出したリンクが別の行へ移る。中断・失敗などで終わった run はもう終了行ができないので、開始行に付ける。
+  // 中断したのに running のままの run（対応するタスクが tasks.yaml に無く、中断と判定できない）でレポートが出ないままにならないよう、
+  // 書かれてから REPORT_WAIT_MS たっても終了行が無いレポートは、実行中でも開始行に付ける
+  const isRunning = meta.status === 'running';
+  const REPORT_WAIT_MS = 10 * 60 * 1000; // judge は実際の run で数秒。それより十分長くする
   const unmatched = [];
   const ms = (iso) => new Date(iso).getTime();
+  const isStartRow = (x) => x.kind === 'step' || x.kind === 'sub';
+  const isEndRow = (x) => x.kind === 'done' || (x.kind === 'phase' && x.phase === 'report');
   for (const r of reports(runDir)) {
     const mt = r.mtime;
-    let best = null, bestDist = Infinity;
+    // at はレポートを書いた試行を見分ける時刻（手順 1 は report フェーズの開始、手順 2 は mtime）
+    let best = null, bestDist = Infinity, at = 0;
     // 1) report フェーズの終了時刻に最も近い step（ファイルは report フェーズ末尾で書かれる）
     for (const [key, phases] of Object.entries(reportPhases)) {
       for (const ph of phases) {
         const end = ph.end ? ms(ph.end) : Date.now();
         if (mt >= ms(ph.start) - 2000 && mt <= end + 5000) {
           const d = Math.abs(end - mt);
-          if (d < bestDist) { best = key; bestDist = d; }
+          if (d < bestDist) { best = key; bestDist = d; at = ms(ph.start); }
         }
       }
     }
@@ -544,14 +555,26 @@ function timeline(runDir, routing, meta, stepTagsOf) {
       for (const [key, w] of Object.entries(windows)) {
         if (mt >= ms(w.start) - 5000 && mt <= ms(w.end) + 5000) {
           const d = Math.abs(ms(w.end) - mt);
-          if (d < bestDist) { best = key; bestDist = d; }
+          if (d < bestDist) { best = key; bestDist = d; at = mt; }
         }
       }
     }
-    let row = best && rows.find((x) => x.key === best && (x.kind === 'step' || x.kind === 'sub'));
-    // 3) 時刻で引けないとき（run フォルダをコピー・zip 展開して mtime が変わった場合）は、ファイル名の stem がステップ名と同じ最後の行に付ける
-    if (!row) { const stem = path.basename(r.rel, '.md'); row = [...rows].reverse().find((x) => (x.kind === 'step' || x.kind === 'sub') && x.step === stem); }
-    if (row) row.reports.push(r.rel); else unmatched.push(r);
+    // レート上限で中断 → リトライした通常ステップは、同じ key に開始行と完了の行が試行ごとにある。at より前に始まった最後の試行を選び、
+    // その開始から次の試行の開始までにある終了行に付ける（前の試行の中断の行や、後の試行の行に付けない）。
+    // 終了行を時刻の近さで選ばないのは、step_complete の timestamp が execute の終了時刻で、report フェーズより前になるため
+    // （実際の run のログで確認。ログに書かれる順は judge の後）
+    let row = null;
+    if (best) {
+      const starts = rows.filter((x) => x.key === best && isStartRow(x));
+      // at より後に始まった試行は選ばない（余裕を持たせると、レポートを書いた直後に始まったリトライを選び、書いた試行の終了行に付かなくなる）
+      const i = Math.max(0, starts.findLastIndex((x) => ms(x.ts) <= at));
+      const start = starts[i], next = starts[i + 1];
+      if (start) row = rows.find((x) => x.key === best && isEndRow(x) && x.ts >= start.ts && (!next || x.ts < next.ts)) ?? start;
+    }
+    // 3) 時刻で引けないとき（run フォルダをコピー・zip 展開して mtime が変わった場合）は、ファイル名の stem がステップ名と同じ最後の終了行（無ければ開始行）に付ける
+    if (!row) { const stem = path.basename(r.rel, '.md'); row = rows.findLast((x) => isEndRow(x) && x.step === stem) ?? rows.findLast((x) => isStartRow(x) && x.step === stem); }
+    if (row && isStartRow(row) && isRunning && Date.now() - mt < REPORT_WAIT_MS) continue;
+    if (row) (row.reports ?? (row.reports = [])).push(r.rel); else unmatched.push(r);
   }
   // 中断・失敗した run は、終わった時刻を最後の行にする。失敗は meta.endTime と meta.reason / meta.failure（例: rule_no_match）、
   // 中断（プロセスが落ちて status が running のまま）は meta.updatedAt（最後に書かれた時刻）を使う

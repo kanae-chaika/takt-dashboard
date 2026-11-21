@@ -2,6 +2,8 @@
 // /api/state の timeline の行の組み立てを確かめる。
 // - 並列の子のリトライ: 同じ iteration のまま execute から走り直すと、2 回目以降を別の試行として key に @n を付ける
 // - レポートの紐づけ: mtime が report フェーズの時間帯（無ければ step 全体の時間帯）に入る iteration の行に付ける
+// - レポートを付ける行: 終了行（通常ステップは完了の行、並列の子は report フェーズの終了の行）。
+//   終了行が無いステップは、終わった run なら開始行、実行中の run なら書かれてから 10 分たつまでどこにも出さない
 // - takt の内部用ディレクトリ（.takt-report-internal/。reports 直下にも subworkflows の中にもできる）の .md はレポートとして拾わない
 // HOME と cwd は一時ディレクトリにし、PATH を空にして手元の takt 本体を読ませない
 import { test, before, after } from 'node:test';
@@ -17,20 +19,20 @@ const REPO = path.join(ROOT, 'repo');
 const RUNS = path.join(REPO, '.takt', 'runs');
 
 const START = '2026-11-01T10:00:00.000Z';
-const at = (sec) => new Date(Date.parse(START) + sec * 1000).toISOString();
+const at = (sec, base = START) => new Date(Date.parse(base) + sec * 1000).toISOString();
 
-// meta.json に workflow は入れない（並列の子の tag を workflow yaml から引く経路に入れないため）。status は completed（end 行を作らない）
-function writeRun(slug, events, reportFiles = {}) {
+// meta.json に workflow は入れない（並列の子の tag を workflow yaml から引く経路に入れないため）。status の既定は completed（end 行を作らない）
+function writeRun(slug, events, reportFiles = {}, status = 'completed', base = START) {
   const runDir = path.join(RUNS, slug);
   fs.mkdirSync(path.join(runDir, 'logs'), { recursive: true });
-  fs.writeFileSync(path.join(runDir, 'meta.json'), JSON.stringify({ status: 'completed', runSlug: slug, startTime: START, updatedAt: at(300) }));
+  fs.writeFileSync(path.join(runDir, 'meta.json'), JSON.stringify({ status, runSlug: slug, startTime: START, updatedAt: at(300) }));
   fs.writeFileSync(path.join(runDir, 'logs', 'run.jsonl'), events.map((e) => JSON.stringify(e)).join('\n') + '\n');
   // reportFiles は { reports からの相対パス: mtime の秒（at に渡す値） }
   for (const [rel, sec] of Object.entries(reportFiles)) {
     const p = path.join(runDir, 'reports', rel);
     fs.mkdirSync(path.dirname(p), { recursive: true });
     fs.writeFileSync(p, '# ' + rel + '\n');
-    const d = new Date(at(sec));
+    const d = new Date(at(sec, base));
     fs.utimesSync(p, d, d);
   }
   return runDir;
@@ -63,7 +65,7 @@ function planEvents(withReport) {
   return out;
 }
 // レポートのファイル名（stem）は step 名と同じ plan にする。時刻で引けずにファイル名一致（手順 3）に落ちると、
-// 両方とも最後の plan の行（plan#2）に付くので、iteration 1 の分が plan#1 に付くかで区別できる
+// 両方とも最後の plan の完了の行（plan#2）に付くので、iteration 1 の分が plan#1 に付くかで区別できる
 const ITER1 = path.join('iter1', 'plan.md'), ITER2 = path.join('iter2', 'plan.md');
 const RUN_PHASE = path.join(RUNS, '20261101-100100-report-phase');
 const RUN_WINDOW = path.join(RUNS, '20261101-100200-step-window');
@@ -99,6 +101,72 @@ const INTERNAL_FILES = {
   [path.join(INTERNAL, 'team-leader', 'audit', 'a.md')]: 250,
 };
 
+// 通常ステップ plan（完了）→ 並列の子 arch-review（judge まで完了）→ 通常ステップ fix（report フェーズまで終わり、step_complete がまだ無い）の run。
+// step_complete の timestamp は実際のログと同じく execute の終了時刻にする（report フェーズより前）
+const RUN_END_ROW = path.join(RUNS, '20261101-100500-end-row');
+const SUB_REPORT = path.join('subworkflows', 'x', 'arch-review.md');
+const endRowEvents = (base = START) => [
+  { type: 'step_start', step: 'plan', iteration: 1, provider: 'claude', model: 'sonnet', timestamp: at(0, base) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'execute', timestamp: at(1, base) },
+  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'execute', status: 'done', timestamp: at(10, base) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'report', timestamp: at(11, base) },
+  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'report', status: 'done', timestamp: at(20, base) },
+  { type: 'step_complete', step: 'plan', iteration: 1, status: 'done', timestamp: at(10, base) },
+  { type: 'step_start', step: 'reviewers', iteration: 2, provider: 'claude', model: 'sonnet', timestamp: at(100, base) },
+  { type: 'phase_start', step: 'arch-review', iteration: 2, phaseName: 'execute', timestamp: at(101, base) },
+  { type: 'phase_complete', step: 'arch-review', iteration: 2, phaseName: 'execute', status: 'done', timestamp: at(110, base) },
+  { type: 'phase_start', step: 'arch-review', iteration: 2, phaseName: 'report', timestamp: at(111, base) },
+  { type: 'phase_complete', step: 'arch-review', iteration: 2, phaseName: 'report', status: 'done', timestamp: at(120, base) },
+  { type: 'phase_start', step: 'arch-review', iteration: 2, phaseName: 'judge', timestamp: at(121, base) },
+  { type: 'phase_complete', step: 'arch-review', iteration: 2, phaseName: 'judge', status: 'done', timestamp: at(125, base) },
+  { type: 'step_complete', step: 'reviewers', iteration: 2, status: 'done', timestamp: at(125, base) },
+  { type: 'step_start', step: 'fix', iteration: 3, provider: 'claude', model: 'sonnet', timestamp: at(200, base) },
+  { type: 'phase_start', step: 'fix', iteration: 3, phaseName: 'execute', timestamp: at(201, base) },
+  { type: 'phase_complete', step: 'fix', iteration: 3, phaseName: 'execute', status: 'done', timestamp: at(210, base) },
+  { type: 'phase_start', step: 'fix', iteration: 3, phaseName: 'report', timestamp: at(211, base) },
+  { type: 'phase_complete', step: 'fix', iteration: 3, phaseName: 'report', status: 'done', timestamp: at(220, base) },
+];
+const END_ROW_EVENTS = endRowEvents();
+// 同じイベントとレポートで、status が running の run。tasks.yaml が無いので中断とは判定されず running のまま。
+// RUNNING は時刻を今から 230 秒前を起点にする（fix.md が書かれたのは 10 秒前。fix が judge の途中）。
+// STALE は時刻が START のまま（fix.md が書かれてから 10 分以上たっている。中断したのに running のままの run）
+const RUN_END_ROW_RUNNING = path.join(RUNS, '20261101-100550-end-row-running');
+const RUN_END_ROW_STALE = path.join(RUNS, '20261101-100560-end-row-stale');
+const RECENT = new Date(Date.now() - 230 * 1000).toISOString();
+
+// 通常ステップ plan がレート上限で中断し、同じ iteration のままリトライして完了した run。同じ key（plan#1）に開始行と完了の行が 2 つずつできる。
+// レポートを書くのはリトライの report フェーズ（61 〜 70）
+const RUN_RETRY_STEP = path.join(RUNS, '20261101-100600-retry-step');
+const RETRY_STEP_EVENTS = [
+  { type: 'step_start', step: 'plan', iteration: 1, provider: 'claude', model: 'sonnet', timestamp: at(0) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'execute', timestamp: at(1) },
+  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'execute', status: 'rate_limited', timestamp: at(10) },
+  { type: 'step_complete', step: 'plan', iteration: 1, status: 'rate_limited', timestamp: at(10) },
+  { type: 'step_start', step: 'plan', iteration: 1, provider: 'claude', model: 'sonnet', timestamp: at(50) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'execute', timestamp: at(51) },
+  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'execute', status: 'done', timestamp: at(60) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'report', timestamp: at(61) },
+  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'report', status: 'done', timestamp: at(70) },
+  { type: 'step_complete', step: 'plan', iteration: 1, status: 'done', timestamp: at(60) },
+];
+
+// 通常ステップ plan の 1 回目の試行が report フェーズ（2 〜 3）でレポートを書いた直後に judge でレート上限に当たり、
+// 4 秒にリトライが始まって execute の途中の run。リトライの開始は report フェーズの開始から 5 秒以内
+const RUN_RETRY_SOON = path.join(RUNS, '20261101-100650-retry-soon');
+const RETRY_SOON_EVENTS = [
+  { type: 'step_start', step: 'plan', iteration: 1, provider: 'claude', model: 'sonnet', timestamp: at(0) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'execute', timestamp: at(1) },
+  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'execute', status: 'done', timestamp: at(2) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'report', timestamp: at(2) },
+  { type: 'phase_complete', step: 'plan', iteration: 1, phaseName: 'report', status: 'done', timestamp: at(3) },
+  { type: 'step_complete', step: 'plan', iteration: 1, status: 'rate_limited', timestamp: at(2) },
+  { type: 'step_start', step: 'plan', iteration: 1, provider: 'claude', model: 'sonnet', timestamp: at(4) },
+  { type: 'phase_start', step: 'plan', iteration: 1, phaseName: 'execute', timestamp: at(5) },
+];
+
+// planEvents(true) の run に、どの step の時間帯にも入らない mtime（250 秒）の plan.md を置く（run フォルダをコピーして mtime が変わった場合）
+const RUN_STEM = path.join(RUNS, '20261101-100700-stem');
+
 let server;
 
 before(async () => {
@@ -110,6 +178,12 @@ before(async () => {
   writeRun(path.basename(RUN_WINDOW), planEvents(false), { [ITER1]: 15, [ITER2]: 115 });
   writeRun(path.basename(RUN_PHASE_FIRST), PHASE_FIRST_EVENTS, { [ITER1]: 23 });
   writeRun(path.basename(RUN_INTERNAL), planEvents(true), { 'plan.md': 19, [SUB_PLAN]: 19, 'other.md': 250, ...INTERNAL_FILES });
+  writeRun(path.basename(RUN_END_ROW), END_ROW_EVENTS, { 'plan.md': 20, [SUB_REPORT]: 120, 'fix.md': 220 });
+  writeRun(path.basename(RUN_END_ROW_RUNNING), endRowEvents(RECENT), { 'plan.md': 20, [SUB_REPORT]: 120, 'fix.md': 220 }, 'running', RECENT);
+  writeRun(path.basename(RUN_END_ROW_STALE), END_ROW_EVENTS, { 'plan.md': 20, [SUB_REPORT]: 120, 'fix.md': 220 }, 'running');
+  writeRun(path.basename(RUN_RETRY_STEP), RETRY_STEP_EVENTS, { 'plan.md': 70 });
+  writeRun(path.basename(RUN_RETRY_SOON), RETRY_SOON_EVENTS, { 'plan.md': 3 });
+  writeRun(path.basename(RUN_STEM), planEvents(true), { 'plan.md': 250 });
   server = await startDashboard({ cwd: REPO, home: HOME, env: { PATH: '', TAKT_DASHBOARD_ROOTS: '' } });
 });
 
@@ -126,11 +200,15 @@ async function getState(runDir) {
 async function getTimeline(runDir) {
   return (await getState(runDir)).timeline;
 }
+// 通常ステップの完了の行（kind: done）に付いたレポート。開始行（kind: step）には付いていないことも確かめる
 const reportsOf = (timeline, key) => {
-  const row = timeline.find((r) => r.kind === 'step' && r.key === key);
-  assert.ok(row, key + ' の行がある');
-  return row.reports;
+  const row = timeline.find((r) => r.kind === 'done' && r.key === key);
+  assert.ok(row, key + ' の完了の行がある');
+  assert.deepEqual(timeline.filter((r) => r.kind === 'step' && r.key === key).flatMap((r) => r.reports ?? []), [], key + ' の開始行にはレポートが付かない');
+  return row.reports ?? [];
 };
+// kind と key が一致する行それぞれのレポート（行の並び順）
+const reportsByRow = (timeline, kind, key) => timeline.filter((r) => r.kind === kind && r.key === key).map((r) => r.reports ?? []);
 
 // ---------- 並列の子のリトライ（@n） ----------
 
@@ -161,6 +239,64 @@ test('report フェーズのイベントが無い run でも、レポートは m
   const timeline = await getTimeline(RUN_WINDOW);
   assert.deepEqual(reportsOf(timeline, 'plan#1'), [ITER1]);
   assert.deepEqual(reportsOf(timeline, 'plan#2'), [ITER2]);
+});
+
+// ---------- レポートを付ける行（終了行） ----------
+
+test('通常ステップのレポートは完了の行に付き、開始行には付かない', async () => {
+  // Given: plan の report フェーズの終了時刻に plan.md が書かれ、step_complete の timestamp が report フェーズより前の run
+  const timeline = await getTimeline(RUN_END_ROW);
+  // Then: 完了の行に付く（reportsOf が開始行に付いていないことも確かめる）
+  assert.deepEqual(reportsOf(timeline, 'plan#1'), ['plan.md']);
+});
+
+test('並列の子のレポートは report フェーズの終了行に付き、開始行・execute / judge の終了行には付かない', async () => {
+  const timeline = await getTimeline(RUN_END_ROW);
+  const phases = timeline.filter((r) => r.kind === 'phase' && r.key === 'arch-review#2').map((r) => [r.phase, r.reports ?? []]);
+  assert.deepEqual(phases, [['execute', []], ['report', [SUB_REPORT]], ['judge', []]]);
+  assert.deepEqual(reportsByRow(timeline, 'sub', 'arch-review#2'), [[]]);
+});
+
+test('終わった run で完了の行が無いステップのレポートは開始行に付く', async () => {
+  // Given: fix の report フェーズまで終わり、step_complete が書かれないまま終わった run
+  const timeline = await getTimeline(RUN_END_ROW);
+  assert.deepEqual(reportsByRow(timeline, 'done', 'fix#3'), []);
+  assert.deepEqual(reportsByRow(timeline, 'step', 'fix#3'), [['fix.md']]);
+});
+
+test('実行中の run で完了の行がまだ無いステップのレポートは、開始行にも未分類にも出ない', async () => {
+  // Given: fix の report フェーズまで終わり、step_complete がまだ書かれていない実行中の run（judge の途中）
+  const state = await getState(RUN_END_ROW_RUNNING);
+  // Then: fix.md はどこにも出ない（完了の行ができてから出す）。終了行があるステップのレポートは実行中でも出る
+  assert.deepEqual(state.timeline.flatMap((r) => r.reports ?? []).sort(), ['plan.md', SUB_REPORT].sort());
+  assert.deepEqual(state.active.reports.map((r) => r.rel), []);
+});
+
+test('レート上限で中断してリトライしたステップのレポートは、リトライの完了の行に付く', async () => {
+  const timeline = await getTimeline(RUN_RETRY_STEP);
+  // 同じ key の完了の行は、中断（rate_limited）→ 完了（done）の順に 2 つ。開始行 2 つには付かない
+  assert.deepEqual(timeline.filter((r) => r.kind === 'done' && r.key === 'plan#1').map((r) => [r.status, r.reports ?? []]), [['rate_limited', []], ['done', ['plan.md']]]);
+  assert.deepEqual(reportsByRow(timeline, 'step', 'plan#1'), [[], []]);
+});
+
+test('レポートを書いた直後にリトライが始まっても、レポートは書いた試行の終了行に付く', async () => {
+  // Given: 1 回目の試行が 3 秒にレポートを書き、4 秒にリトライが始まった run（リトライには終了行がまだ無い）
+  const timeline = await getTimeline(RUN_RETRY_SOON);
+  // Then: 1 回目の試行の終了行（rate_limited）に付く。リトライの開始行には付かない
+  assert.deepEqual(timeline.filter((r) => r.kind === 'done' && r.key === 'plan#1').map((r) => [r.status, r.reports ?? []]), [['rate_limited', ['plan.md']]]);
+  assert.deepEqual(reportsByRow(timeline, 'step', 'plan#1'), [[], []]);
+});
+
+test('mtime がどの step の時間帯にも入らないレポートは、ファイル名が step 名と同じ最後の完了の行に付く', async () => {
+  const timeline = await getTimeline(RUN_STEM);
+  assert.deepEqual(reportsOf(timeline, 'plan#1'), []);
+  assert.deepEqual(reportsOf(timeline, 'plan#2'), ['plan.md']);
+});
+
+test('実行中のままの run でも、書かれてから 10 分以上たったレポートは開始行に付く', async () => {
+  // Given: fix の report フェーズが 10 分以上前に終わり、step_complete が無いまま status が running の run（中断と判定できない run）
+  const timeline = await getTimeline(RUN_END_ROW_STALE);
+  assert.deepEqual(reportsByRow(timeline, 'step', 'fix#3'), [['fix.md']]);
 });
 
 // ---------- takt の内部用ディレクトリ（.takt-report-internal/） ----------
