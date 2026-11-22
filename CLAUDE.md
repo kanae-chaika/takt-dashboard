@@ -11,7 +11,7 @@
 | `bin/ui/` | ブラウザ側。`index.html`（骨組み）・`app.css`・`app.js`。リクエストごとに読むので、`npm link` 中はブラウザのリロードで編集が反映される |
 | `test/*.test.js` | `node:test` のテスト。`bin/takt-dashboard` を子プロセスで起動し、HTTP 応答と終了コードで確認する |
 | `docs/` | README 用のスクリーンショットのみ |
-| `.coderabbit.yaml` | CodeRabbit の設定（日本語・assertive・draft PR もレビュー） |
+| `.coderabbit.yaml` | CodeRabbit の設定（日本語・assertive） |
 | `eslint.config.js` | ESLint の設定（検査のみ。サーバー・テストは Node.js の ESM、`bin/ui/app.js` はブラウザのグローバルな script として読む） |
 | `.github/workflows/ci.yml` | CI。push / PR ごとに `npm run lint` と `npm test` を ubuntu / windows / macos × Node 20 / 22 で回す |
 | `.github/workflows/dismiss-stale-coderabbit-approval.yml` | PR に push されたら、CodeRabbit が古いコミットに出した Approved を取り消す（最新のコミットへの Approved は残す） |
@@ -94,3 +94,4 @@ npm run lint                 # ESLint（検査のみ）
 - コミットメッセージは `fix:` / `feat:` / `docs:` / `chore:` + 日本語の説明。1 行目だけで「何を・なぜ」が分かるようにする（例: `fix: 127.0.0.1 にだけ bind する（README の「ローカル専用」の記述どおりに）`）
 - `main` への直接 push はしない。PR を経由する
 - PR は CodeRabbit（assertive）がレビューする。指摘には対応するか、対応しない理由を返す
+- PR を作ったとき・PR に push したときは、そのつど PR に `@coderabbitai review` とコメントしてレビューを依頼する。ただし、変更が文書（README・CLAUDE.md など）だけの PR・push は依頼しなくてよい（スターが 10 未満の公開リポジトリは、CodeRabbit が自動ではレビューしないため。スターが 10 以上になったらこの項目を消す）
