@@ -94,3 +94,4 @@ npm run lint                 # ESLint（検査のみ）
 - コミットメッセージは `fix:` / `feat:` / `docs:` / `chore:` + 日本語の説明。1 行目だけで「何を・なぜ」が分かるようにする（例: `fix: 127.0.0.1 にだけ bind する（README の「ローカル専用」の記述どおりに）`）
 - `main` への直接 push はしない。PR を経由する
 - PR は CodeRabbit（assertive）がレビューする。指摘には対応するか、対応しない理由を返す
+- PR を作ったとき・PR に push したときは、そのつど PR に `@coderabbitai review` とコメントしてレビューを依頼する（スターが 10 未満の公開リポジトリは、CodeRabbit が自動ではレビューしないため。スターが 10 以上になったらこの項目を消す）
