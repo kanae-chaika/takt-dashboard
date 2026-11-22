@@ -10,6 +10,18 @@ TAKT の公式ツールではなく、TAKT プロジェクトとは関係のな�
 
 ![失敗した run: レビュー → 裁定 → 修正ループを 2 周したあと、裁定ステップで失敗](docs/screenshot-failed.png)
 
+## 5 分で試す
+
+前提: Node.js 20 以上と、[TAKT](https://github.com/nrslib/takt) を使っているリポジトリ。
+
+```bash
+npm install -g github:kanae-chaika/takt-dashboard   # 1. インストール
+cd /path/to/your-repo                                # 2. takt を使っているリポジトリへ
+takt-dashboard                                       # 3. 起動
+```
+
+ブラウザで http://localhost:7331 を開くと、そのリポジトリの run が一覧で見えます。run がまだ無いときは「takt の run が見つかりません」と出ます。オプションや設定は「使い方」を見てください。
+
 ## できること
 
 - **タイムライン**: ステップの開始・完了を時刻順に。並列ステップは子ごとに木にして、execute / report / judge の終了時刻を並べる。
@@ -139,6 +151,18 @@ MIT
 ## English
 
 A local web dashboard for watching [TAKT](https://github.com/nrslib/takt) runs. No dependencies (Node.js standard library only). This is an unofficial tool and is not affiliated with the TAKT project.
+
+**Try it in 5 minutes**
+
+Requires Node.js 20 or later and a repository where you use [TAKT](https://github.com/nrslib/takt).
+
+```bash
+npm install -g github:kanae-chaika/takt-dashboard   # 1. install
+cd /path/to/your-repo                                # 2. go to a repository where you use takt
+takt-dashboard                                       # 3. start
+```
+
+Open http://localhost:7331 in your browser to see that repository's runs. If there are no runs yet, it shows "takt の run が見つかりません" (no takt runs found). See "Usage" below for options and settings.
 
 **Features**
 
