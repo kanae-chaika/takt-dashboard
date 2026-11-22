@@ -49,7 +49,7 @@
   button.rep { font:inherit; margin:0; padding:0; border:none; border-radius:0; background:none; text-align:left; color:var(--acc); text-decoration:none; cursor:pointer; }
   button.rep:hover { text-decoration:underline; }
   /* rule 名が長いこともある（実装系は文章）。横幅を広げず … で切り、全文は hover と詳細モーダルで */
-  button.judge { font:inherit; margin:0; background:none; text-align:left; display:inline-block; padding:0 6px; border:1px solid var(--line); border-radius:4px; font-size:11.5px; color:var(--fg); cursor:pointer; text-decoration:none; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
+  button.judge { font:inherit; margin:0; background:none; text-align:left; display:inline-block; padding:0 6px; border:1px solid var(--line); border-radius:4px; font-size:11.5px; color:var(--fg); cursor:pointer; text-decoration:none; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; }
   button.judge:hover { border-color:var(--acc); }
   button.judge.j-approved { color:var(--ok); }
   button.judge.j-rejected { color:var(--err); }
