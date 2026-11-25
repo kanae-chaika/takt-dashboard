@@ -62,8 +62,12 @@
   #viewer .box { background:#161d18; border:1px solid rgba(233,245,238,.22); border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,.6); width:min(1000px,100%); max-height:100%; display:flex; flex-direction:column; }
   #viewer .head { display:flex; justify-content:space-between; padding:10px 16px; border-bottom:1px solid var(--line); }
   #viewer pre { max-height:none; border:none; border-radius:0 0 10px 10px; flex:1; background:#161d18; }
-  /* レポートの Markdown プレビュー（#vmd.md）と、元のテキストとの切替ボタン（#vmode）。ボタンはタイトルと × の間の右寄せ */
-  #viewer .head #vmode { margin-left:auto; margin-right:8px; flex:none; font-size:12px; white-space:nowrap; align-self:flex-start; }
+  /* レポートの Markdown プレビュー（#vmd.md）と、元のテキストとの切替（#vmode）。切替はタイトルと × の間の右寄せで、2 つのボタンをつなげて並べ、選んでいるほうに色を付ける */
+  #viewer .head #vmode:not([hidden]) { display:flex; margin-left:auto; margin-right:8px; flex:none; align-self:flex-start; }
+  #vmode button { font-size:12px; white-space:nowrap; color:var(--dim); border-radius:0; }
+  #vmode button:first-child { border-radius:6px 0 0 6px; }
+  #vmode button:last-child { border-radius:0 6px 6px 0; margin-left:-1px; }
+  #vmode button[aria-pressed="true"] { color:var(--fg); background:rgba(124,196,232,.16); border-color:var(--acc); position:relative; }
   #viewer .md { flex:1; min-height:0; overflow:auto; padding:16px 22px 20px; border-radius:0 0 10px 10px; font-size:13.5px; line-height:1.7; overflow-wrap:anywhere; }
   /* 上の h1 / h2 / table / td / pre は画面の部品用の指定なので、プレビューの中では文書用に上書きする */
   .md > :first-child { margin-top:0; }

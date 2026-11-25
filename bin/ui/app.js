@@ -340,11 +340,12 @@ function fillViewer(text, fontSize, isReport){
   showViewerMode();
 }
 function showViewerMode(){
-  const isPreview = hasPreview && !isReportRaw, btn = document.getElementById('vmode');
+  const isPreview = hasPreview && !isReportRaw, sw = document.getElementById('vmode');
   document.getElementById('vbody').hidden = isPreview; document.getElementById('vmd').hidden = !isPreview;
-  btn.hidden = !hasPreview; btn.textContent = isReportRaw ? 'プレビュー' : '元のテキスト'; // ボタンの文言は、押すと切り替わる先
+  sw.hidden = !hasPreview; // 「プレビュー」「元のテキスト」を並べ、いま出しているほうを aria-pressed で示す（色も aria-pressed で付ける）
+  for (const b of sw.querySelectorAll('button[data-mode]')) b.setAttribute('aria-pressed', String((b.dataset.mode === 'raw') === isReportRaw));
 }
-document.getElementById('vmode').addEventListener('click', () => { isReportRaw = !isReportRaw; showViewerMode(); });
+document.getElementById('vmode').addEventListener('click', (e) => { const b = e.target.closest('button[data-mode]'); if (b) { isReportRaw = b.dataset.mode === 'raw'; showViewerMode(); } });
 function noteOpener(el){ viewerOpener = locate(el); viewerGen++; }
 // showModal で背景を操作できなくし（Tab・クリックとも）、フォーカスを中へ移す。開いたまま別の内容に切り替えるときは呼び直さない
 function showViewer(){ const v = document.getElementById('viewer'); if (!v.open) v.showModal(); }

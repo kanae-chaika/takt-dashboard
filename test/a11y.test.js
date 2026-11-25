@@ -1072,18 +1072,19 @@ test('高さを変えるバーにフォーカスがあるときに再描画が�
 // HTML への変換そのものは report-preview.test.js で確認する。ここではモーダルのどちらを見せるかだけを見る
 
 const viewerMode = (page) => {
-  const d = page.document, btn = d.getElementById('vmode');
-  return { isRawShown: !d.getElementById('vbody').hidden, isPreviewShown: !d.getElementById('vmd').hidden, preview: d.getElementById('vmd').innerHTML, button: btn.hidden ? null : btn.textContent };
+  const d = page.document, sw = d.getElementById('vmode');
+  const pressed = [...sw.querySelectorAll('button[data-mode]')].filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.dataset.mode);
+  return { isRawShown: !d.getElementById('vbody').hidden, isPreviewShown: !d.getElementById('vmd').hidden, preview: d.getElementById('vmd').innerHTML, selected: sw.hidden ? null : pressed.join(',') };
 };
 async function openPlanReport(page) {
   page.document.querySelector('#tl .rep[data-rel="plan.md"]').click();
   await waitFor(() => page.viewer.open && title(page) === 'plan.md', 'レポートが開く');
 }
 
-test('レポートを開くと Markdown のプレビューで出し、元のテキストに切り替えるボタンが出る', async () => {
+test('レポートを開くと Markdown のプレビューで出し、「プレビュー」「元のテキスト」の切替が「プレビュー」を選んだ状態で出る', async () => {
   const page = await renderedPage();
   await openPlanReport(page);
-  assert.deepEqual(viewerMode(page), { isRawShown: false, isPreviewShown: true, preview: '<p>plan のレポート</p>', button: '元のテキスト' });
+  assert.deepEqual(viewerMode(page), { isRawShown: false, isPreviewShown: true, preview: '<p>plan のレポート</p>', selected: 'preview' });
   assert.equal(vbody(page), 'plan のレポート\n', '元のテキストも入れてある（切り替えたときに出す）');
 });
 
@@ -1094,29 +1095,35 @@ test('プレビューの領域（#vmd）も、本文（#vbody）と同じく Tab
   assert.equal(md.getAttribute('aria-labelledby'), 'vtitle');
 });
 
-test('切替ボタンを押すたびに、元のテキストとプレビューが入れ替わる。ボタンの文言は切り替わる先', async () => {
+test('切替は「プレビュー」「元のテキスト」の 2 つのボタンが並んだもので、まとまりとして名前を持つ', () => {
+  assert.match(HTML, /<span id="vmode" role="group" aria-label="レポートの表示" hidden><button type="button" data-mode="preview">プレビュー<\/button><button type="button" data-mode="raw">元のテキスト<\/button><\/span>/);
+});
+
+test('切替の「元のテキスト」「プレビュー」を押すと、押したほうの表示になる。選んでいるほうを押しても変わらない', async () => {
   const page = await renderedPage();
   await openPlanReport(page);
-  const btn = page.document.getElementById('vmode');
-  btn.click();
-  assert.deepEqual(viewerMode(page), { isRawShown: true, isPreviewShown: false, preview: '<p>plan のレポート</p>', button: 'プレビュー' });
+  const mode = (m) => page.document.querySelector('#vmode button[data-mode="' + m + '"]');
+  mode('raw').click();
+  assert.deepEqual(viewerMode(page), { isRawShown: true, isPreviewShown: false, preview: '<p>plan のレポート</p>', selected: 'raw' });
   assert.equal(page.viewer.open, true, '切り替えてもモーダルは開いたまま');
-  btn.click();
-  assert.deepEqual(viewerMode(page), { isRawShown: false, isPreviewShown: true, preview: '<p>plan のレポート</p>', button: '元のテキスト' });
+  mode('raw').click();
+  assert.equal(viewerMode(page).selected, 'raw');
+  mode('preview').click();
+  assert.deepEqual(viewerMode(page), { isRawShown: false, isPreviewShown: true, preview: '<p>plan のレポート</p>', selected: 'preview' });
 });
 
 test('元のテキストに切り替えた後は、閉じて別のレポートを開いても元のテキストで出す', async () => {
   const page = await renderedPage();
   await openPlanReport(page);
-  page.document.getElementById('vmode').click();
+  page.document.querySelector('#vmode button[data-mode="raw"]').click();
   page.viewer.close();
   await settle(); await settle();
   page.document.querySelector('#reps .rep[data-rel="other.md"]').click();
   await waitFor(() => page.viewer.open && title(page) === 'other.md', '別のレポートが開く');
-  assert.deepEqual(viewerMode(page), { isRawShown: true, isPreviewShown: false, preview: '<p>どの step にも付かないレポート</p>', button: 'プレビュー' });
+  assert.deepEqual(viewerMode(page), { isRawShown: true, isPreviewShown: false, preview: '<p>どの step にも付かないレポート</p>', selected: 'raw' });
 });
 
-test('判定・エラーは、レポートをプレビューで開いた後でも元のテキストのまま出し、切替ボタンは出さない', async (t) => {
+test('判定・エラーは、レポートをプレビューで開いた後でも元のテキストのまま出し、切替は出さない', async (t) => {
   const cases = { '判定': '#tl .judge[data-ji]', 'エラー': '#tl .judge[data-ei]', '経路のノード': '#path .node.has-j' };
   for (const [name, sel] of Object.entries(cases)) {
     await t.test(name, async () => {
@@ -1126,12 +1133,12 @@ test('判定・エラーは、レポートをプレビューで開いた後で�
       await settle(); await settle();
       page.document.querySelector(sel).click();
       await waitFor(() => page.viewer.open, 'モーダルが開く');
-      assert.deepEqual(viewerMode(page), { isRawShown: true, isPreviewShown: false, preview: '', button: null });
+      assert.deepEqual(viewerMode(page), { isRawShown: true, isPreviewShown: false, preview: '', selected: null });
     });
   }
 });
 
-test('レポートが無い・取得できないときの文言は、プレビューにせず元のテキストで出す（切替ボタンも出さない）', async (t) => {
+test('レポートが無い・取得できないときの文言は、プレビューにせず元のテキストで出す（切替も出さない）', async (t) => {
   const cases = {
     'レポートが無い（404）': { respond: null, body: 'レポートが見つかりません' },
     '通信の失敗': { respond: () => Promise.reject(new TypeError('Failed to fetch')), body: 'レポートを取得できません' },
@@ -1144,7 +1151,7 @@ test('レポートが無い・取得できないときの文言は、プレビ�
       if (c.respond) page.ctx.fetch = (u) => u.startsWith('/api/report') ? c.respond() : realFetch(u);
       await page.ctx.openReport('missing.md');
       assert.equal(vbody(page), c.body);
-      assert.deepEqual(viewerMode(page), { isRawShown: true, isPreviewShown: false, preview: '', button: null });
+      assert.deepEqual(viewerMode(page), { isRawShown: true, isPreviewShown: false, preview: '', selected: null });
     });
   }
 });
