@@ -83,7 +83,9 @@
   .md li { margin:.2em 0; }
   .md li > ul, .md li > ol, .md li > p { margin:.2em 0; }
   .md li.task { list-style:none; }
-  .md li.task > input { margin:0 .35em 0 -1.5em; vertical-align:-2px; }
+  /* チェックボックスは操作できない（disabled）ので、ブラウザ既定だと灰色になる。画面の配色に合わせて自前で描く（済みは判定の approved と同じ緑） */
+  .md li.task > input { appearance:none; -webkit-appearance:none; width:14px; height:14px; margin:0 .45em 0 -1.5em; vertical-align:-2px; border:1px solid var(--dim); border-radius:3px; background:transparent; }
+  .md li.task > input:checked { border-color:var(--ok); background:var(--ok) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.4l2.4 2.4 4.6-5.4' fill='none' stroke='%230d110f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/12px no-repeat; }
   .md a, .md h1 a { color:var(--acc); text-decoration:underline; display:inline; }
   .md code { font-family:ui-monospace,Menlo,monospace; font-size:.9em; background:rgba(233,245,238,.09); border-radius:4px; padding:.1em .35em; }
   #viewer .md pre { flex:none; margin:0 0 .9em; border:1px solid var(--line); border-radius:6px; background:#0d110f; }
