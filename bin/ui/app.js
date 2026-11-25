@@ -86,7 +86,7 @@ document.addEventListener('mousedown', (e) => {
 // 行内は `コード`・**太字**・*斜体*・~~取り消し線~~・[リンク](URL)・URL・<br>・\ によるエスケープ。それ以外（画像・脚注・生の HTML など）は文字のまま出す
 // レポートは LLM の出力なので、本文は必ず esc() を通してから組み立てる（生の HTML はタグにしない）。リンクにするのは http: / https: だけ
 const MD_MAX_DEPTH = 16; // 引用・リストの入れ子の上限。これより深い部分は文字のまま出す（> を大量に重ねた入力で再帰が深くなりすぎないように）
-const MD_HOLD = ''; // 変換済みの HTML を置いておく目印（私用領域の文字。入力からは取り除く）
+const MD_HOLD = '\uE000'; // 変換済みの HTML を置いておく目印（私用領域の文字。入力からは取り除く）
 const MD_FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/, MD_HEAD = /^ {0,3}(#{1,6})[ \t]+(.*)$/, MD_HR = /^ {0,3}([-*_])(?: *\1){2,} *$/, MD_QUOTE = /^ {0,3}>/;
 const MD_ITEM = /^( *)([-*+]|\d{1,9}[.)])(?: +(.*))?$/, MD_DELIM = /^ *\|? *:?-+:? *(?:\| *:?-+:? *)*\|? *$/;
 const mdIndent = (l) => l.length - l.trimStart().length;
@@ -101,7 +101,7 @@ function mdInline(src){
   // \ によるエスケープと `コード`。左から順に読む（\` はコードを始めず、コードの中の \ はそのまま）
   s = s.replace(/\\([!-/:-@[-`{-~])|(`+)([^`]|[^`].*?[^`])\2(?!`)/g, (m, ch, tick, code) => hold(ch !== undefined ? esc(ch) : '<code>' + esc(code.replace(/^ (.*[^ ].*) $/, '$1')) + '</code>'));
   // [文字](URL)。http / https 以外（相対パス・javascript: など）と画像（![…](…)）は文字のまま。URL に目印（コード等）が混ざるものも通さない（属性の中に HTML を戻さない）
-  s = s.replace(/(!?)\[([^\]]+)\]\(([^)\s]+)\)/g, (m, bang, text, url) => bang || !/^https?:\/\//i.test(url) ? m : hold(mdLink(url, mdEmph(esc(text)))));
+  s = s.replace(/(!?)\[([^\]]+)\]\(([^)\s\uE000]+)\)/g, (m, bang, text, url) => bang || !/^https?:\/\//i.test(url) ? m : hold(mdLink(url, mdEmph(esc(text)))));
   // 文中の URL。URL に使える ASCII の文字だけを取り、末尾の句読点・閉じ括弧は URL に含めない（日本語の文は URL の直後に文字が続くため）
   s = s.replace(/https?:\/\/[\w\-.~:/?#[\]@!$&'()*+,;=%]+/gi, (m) => {
     let u = m;
@@ -110,7 +110,7 @@ function mdInline(src){
   });
   // 残りをエスケープしてから装飾する。生の HTML のうち <br> だけは改行にする（表のセルの中の改行に使われている）
   s = mdEmph(esc(s)).replace(/&lt;br\s*\/?&gt;/gi, '<br>');
-  const restore = (t) => t.replace(/(\d+)/g, (m, i) => restore(held[i]));
+  const restore = (t) => t.replace(/\uE000(\d+)\uE000/g, (m, i) => restore(held[i]));
   return restore(s);
 }
 // 表の 1 行をセルに分ける。\| は区切りではなく文字の |（GFM と同じく、コードの中の | も \| と書かれている）
