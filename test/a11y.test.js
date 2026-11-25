@@ -1,5 +1,5 @@
 // 実行: node --test test/a11y.test.js
-// 画面のキーボード操作・モーダル・ラベル（Issue #1 の指摘 11〜14）と、状態・レポートの取得失敗の表示・タスクキューのパスの表示（指摘 15・16）、レポートの Markdown プレビューと生のテキストの切替。
+// 画面のキーボード操作・モーダル・ラベル（Issue #1 の指摘 11〜14）と、状態・レポートの取得失敗の表示・タスクキューのパスの表示（指摘 15・16）、レポートの Markdown プレビューと元のテキストの切替。
 // bin/takt-dashboard を子プロセスで起動し、/ の HTML と、その中の <script> を node:vm で動かした結果で確認する。
 // ブラウザは使えない（依存ライブラリを入れない）ので、テスト内の小さな DOM の代わり（FakeDocument）で動かす。
 // FakeDocument は、ブラウザが行う次の動作だけを真似する:
@@ -1068,7 +1068,7 @@ test('高さを変えるバーにフォーカスがあるときに再描画が�
   assert.deepEqual(d.querySelectorAll('section.toprow').map((el) => el.getAttribute('style')), ['height:480px', 'height:480px']);
 });
 
-// ---------- レポートの Markdown プレビューと、生のテキストとの切替 ----------
+// ---------- レポートの Markdown プレビューと、元のテキストとの切替 ----------
 // HTML への変換そのものは report-preview.test.js で確認する。ここではモーダルのどちらを見せるかだけを見る
 
 const viewerMode = (page) => {
@@ -1080,11 +1080,11 @@ async function openPlanReport(page) {
   await waitFor(() => page.viewer.open && title(page) === 'plan.md', 'レポートが開く');
 }
 
-test('レポートを開くと Markdown のプレビューで出し、生のテキストに切り替えるボタンが出る', async () => {
+test('レポートを開くと Markdown のプレビューで出し、元のテキストに切り替えるボタンが出る', async () => {
   const page = await renderedPage();
   await openPlanReport(page);
-  assert.deepEqual(viewerMode(page), { isRawShown: false, isPreviewShown: true, preview: '<p>plan のレポート</p>', button: '生のテキスト' });
-  assert.equal(vbody(page), 'plan のレポート\n', '生のテキストも入れてある（切り替えたときに出す）');
+  assert.deepEqual(viewerMode(page), { isRawShown: false, isPreviewShown: true, preview: '<p>plan のレポート</p>', button: '元のテキスト' });
+  assert.equal(vbody(page), 'plan のレポート\n', '元のテキストも入れてある（切り替えたときに出す）');
 });
 
 test('プレビューの領域（#vmd）も、本文（#vbody）と同じく Tab でフォーカスでき、タイトルを名前に持つ', () => {
@@ -1094,7 +1094,7 @@ test('プレビューの領域（#vmd）も、本文（#vbody）と同じく Tab
   assert.equal(md.getAttribute('aria-labelledby'), 'vtitle');
 });
 
-test('切替ボタンを押すたびに、生のテキストとプレビューが入れ替わる。ボタンの文言は切り替わる先', async () => {
+test('切替ボタンを押すたびに、元のテキストとプレビューが入れ替わる。ボタンの文言は切り替わる先', async () => {
   const page = await renderedPage();
   await openPlanReport(page);
   const btn = page.document.getElementById('vmode');
@@ -1102,10 +1102,10 @@ test('切替ボタンを押すたびに、生のテキストとプレビュー�
   assert.deepEqual(viewerMode(page), { isRawShown: true, isPreviewShown: false, preview: '<p>plan のレポート</p>', button: 'プレビュー' });
   assert.equal(page.viewer.open, true, '切り替えてもモーダルは開いたまま');
   btn.click();
-  assert.deepEqual(viewerMode(page), { isRawShown: false, isPreviewShown: true, preview: '<p>plan のレポート</p>', button: '生のテキスト' });
+  assert.deepEqual(viewerMode(page), { isRawShown: false, isPreviewShown: true, preview: '<p>plan のレポート</p>', button: '元のテキスト' });
 });
 
-test('生のテキストに切り替えた後は、閉じて別のレポートを開いても生のテキストで出す', async () => {
+test('元のテキストに切り替えた後は、閉じて別のレポートを開いても元のテキストで出す', async () => {
   const page = await renderedPage();
   await openPlanReport(page);
   page.document.getElementById('vmode').click();
@@ -1116,7 +1116,7 @@ test('生のテキストに切り替えた後は、閉じて別のレポート�
   assert.deepEqual(viewerMode(page), { isRawShown: true, isPreviewShown: false, preview: '<p>どの step にも付かないレポート</p>', button: 'プレビュー' });
 });
 
-test('判定・エラーは、レポートをプレビューで開いた後でも生のテキストのまま出し、切替ボタンは出さない', async (t) => {
+test('判定・エラーは、レポートをプレビューで開いた後でも元のテキストのまま出し、切替ボタンは出さない', async (t) => {
   const cases = { '判定': '#tl .judge[data-ji]', 'エラー': '#tl .judge[data-ei]', '経路のノード': '#path .node.has-j' };
   for (const [name, sel] of Object.entries(cases)) {
     await t.test(name, async () => {
@@ -1131,7 +1131,7 @@ test('判定・エラーは、レポートをプレビューで開いた後で�
   }
 });
 
-test('レポートが無い・取得できないときの文言は、プレビューにせず生のテキストで出す（切替ボタンも出さない）', async (t) => {
+test('レポートが無い・取得できないときの文言は、プレビューにせず元のテキストで出す（切替ボタンも出さない）', async (t) => {
   const cases = {
     'レポートが無い（404）': { respond: null, body: 'レポートが見つかりません' },
     '通信の失敗': { respond: () => Promise.reject(new TypeError('Failed to fetch')), body: 'レポートを取得できません' },

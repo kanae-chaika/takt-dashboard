@@ -178,7 +178,7 @@ function mdBlocks(lines, depth, isTight){
       }
       out += isOl ? '</ol>' : '</ul>'; continue;
     }
-    // 段落。行の区切りは改行のまま出す（日本語の文は行をつなぐと余計な空白が入る。生のテキストと行が対応していたほうが見比べやすい）
+    // 段落。行の区切りは改行のまま出す（日本語の文は行をつなぐと余計な空白が入る。元のテキストと行が対応していたほうが見比べやすい）
     const para = [line.trim()];
     for (i++; i < lines.length && lines[i].trim() && !mdStartsBlock(lines, i); i++) para.push(lines[i].trim());
     const html = para.map(mdInline).join('<br>');
@@ -297,7 +297,7 @@ async function openReport(rel){
   // サーバーはレポート・run が無いと 404（本文 not found）、処理の失敗で 500（本文 internal error）を返す。その本文をレポートとして見せない
   const t = !r ? 'レポートを取得できません' : r.status === 404 ? 'レポートが見つかりません' : !r.ok ? 'レポートを取得できません' : r.text;
   document.getElementById('vtitle').textContent = rel;
-  fillViewer(t, '', r && r.ok); // プレビューにするのは取得できたレポートだけ（エラー文は生のまま）
+  fillViewer(t, '', r && r.ok); // プレビューにするのは取得できたレポートだけ（エラー文は元のテキストのまま）
   showViewer();
 }
 // #app の中でフォーカスできる要素（開く要素と、上段の高さを変えるバー）の種類と、それを見分ける属性
@@ -327,22 +327,22 @@ function relocate(o){ return sameAs(o.full, o.attr, o.key, o.area)[o.index] ?? [
 // openReport は fetch を待ってから開くので、待つ間に再描画が走っても困らないよう、クリック・キーの時点で記録する
 // viewerGen は開く操作のたびに増やす（openReport が fetch の後に、自分より後の操作があったかを見るため）
 let viewerOpener = null, viewerGen = 0;
-// モーダルの中身。生のテキストは <pre id="vbody">、レポートの Markdown プレビューは <div id="vmd"> に入れ、見せるほうだけ hidden を外す。
-// 判定・エラー・レポートの取得失敗は Markdown ではないので生だけ（isReport が偽）。そのときは切替ボタンも出さない
-// isReportRaw はユーザーが選んだ表示。モーダルを閉じても、別のレポートを開いても保つ（プレビューが崩れるレポートを続けて生で読めるように）
+// モーダルの中身。元のテキストは <pre id="vbody">、レポートの Markdown プレビューは <div id="vmd"> に入れ、見せるほうだけ hidden を外す。
+// 判定・エラー・レポートの取得失敗は Markdown ではないので元のテキストだけ（isReport が偽）。そのときは切替ボタンも出さない
+// isReportRaw はユーザーが選んだ表示。モーダルを閉じても、別のレポートを開いても保つ（プレビューが崩れるレポートを続けて元のテキストで読めるように）
 let isReportRaw = false, hasPreview = false;
 function fillViewer(text, fontSize, isReport){
   const body = document.getElementById('vbody'), md = document.getElementById('vmd');
   body.textContent = text; body.scrollTop = 0; body.style.fontSize = fontSize;
   let html = null;
-  if (isReport) try { html = renderMarkdown(text); } catch {} // 変換に失敗しても、生のテキストでは読めるようにする
+  if (isReport) try { html = renderMarkdown(text); } catch {} // 変換に失敗しても、元のテキストでは読めるようにする
   hasPreview = html !== null; md.innerHTML = html ?? ''; md.scrollTop = 0;
   showViewerMode();
 }
 function showViewerMode(){
   const isPreview = hasPreview && !isReportRaw, btn = document.getElementById('vmode');
   document.getElementById('vbody').hidden = isPreview; document.getElementById('vmd').hidden = !isPreview;
-  btn.hidden = !hasPreview; btn.textContent = isReportRaw ? 'プレビュー' : '生のテキスト'; // ボタンの文言は、押すと切り替わる先
+  btn.hidden = !hasPreview; btn.textContent = isReportRaw ? 'プレビュー' : '元のテキスト'; // ボタンの文言は、押すと切り替わる先
 }
 document.getElementById('vmode').addEventListener('click', () => { isReportRaw = !isReportRaw; showViewerMode(); });
 function noteOpener(el){ viewerOpener = locate(el); viewerGen++; }
