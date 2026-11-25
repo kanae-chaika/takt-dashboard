@@ -42,7 +42,7 @@ function openJudge(r){
     lines.push('');
   }
   const [it, attempt] = ((r.key||'').split('#')[1] || '').split('@'); // key は step#iter または step#iter@n（n 回目の試行）
-  document.getElementById('vtitle').textContent = r.step + ' の判定（iter ' + it + (attempt ? '・' + attempt + ' 回目' : '') + '）';
+  setViewerTitle(r.step + ' の判定（iter ' + it + (attempt ? '・' + attempt + ' 回目' : '') + '）');
   fillViewer(lines.join('\n'), '14px'); // 判定の理由は短い文章なのでレポートより大きく
   showViewer();
 }
@@ -258,7 +258,7 @@ document.addEventListener('keydown', (e) => { const n = e.target; if ((e.key ===
 function openError(r){
   const lines = [];
   for (const e of r.errors) { lines.push(jst(e.ts) + '  ' + e.phase + ' → ' + e.status); lines.push(e.text); lines.push(''); }
-  document.getElementById('vtitle').textContent = r.step + ' のエラー';
+  setViewerTitle(r.step + ' のエラー');
   fillViewer(lines.join('\n'), '13px');
   showViewer();
 }
@@ -289,6 +289,11 @@ function rowHtml(r, i){
   }
   return '<tr class="alert"><td class="ts">'+jst(r.ts)+'</td><td colspan="4">‼ '+esc(r.type)+' '+esc(r.step)+' '+esc(r.reason)+' '+esc(r.error.slice(0,300))+'</td></tr>';
 }
+// モーダルのタイトルにするレポートの名前。subworkflow のレポートはパスが長い（subworkflows/iteration-1--step-develop--workflow-…--site-<hash>/…/plan.md）ので、
+// 通ってきた step の名前（2 周目以降は #周）とファイル名だけにする。同じ名前のレポートが別の step にもある（testing-review.md など）ので、ファイル名だけにはしない
+function reportTitle(rel){
+  return rel.split('/').filter((s) => s !== 'subworkflows').map((s) => { const m = /^iteration-(\d+)--step-(.+?)--workflow-/.exec(s); return m ? m[2] + (m[1] === '1' ? '' : '#' + m[1]) : s; }).join(' › ');
+}
 async function openReport(rel){
   const gen = viewerGen;
   let r = null; // 取得できなければ null（サーバー停止・ネットワーク断）
@@ -296,7 +301,7 @@ async function openReport(rel){
   if (gen !== viewerGen) return; // 取得を待つ間に別のレポート・判定を開いていたら、古い応答で中身と開いた要素を上書きしない
   // サーバーはレポート・run が無いと 404（本文 not found）、処理の失敗で 500（本文 internal error）を返す。その本文をレポートとして見せない
   const t = !r ? 'レポートを取得できません' : r.status === 404 ? 'レポートが見つかりません' : !r.ok ? 'レポートを取得できません' : r.text;
-  document.getElementById('vtitle').textContent = rel;
+  setViewerTitle(reportTitle(rel), rel);
   fillViewer(t, '', r && r.ok); // プレビューにするのは取得できたレポートだけ（エラー文は元のテキストのまま）
   showViewer();
 }
@@ -331,6 +336,8 @@ let viewerOpener = null, viewerGen = 0;
 // 判定・エラー・レポートの取得失敗は Markdown ではないので元のテキストだけ（isReport が偽）。そのときは切替ボタンも出さない
 // isReportRaw はユーザーが選んだ表示。モーダルを閉じても、別のレポートを開いても保つ（プレビューが崩れるレポートを続けて元のテキストで読めるように）
 let isReportRaw = false, hasPreview = false;
+// hover は title 属性に出す文字（レポートの省略していないパス）。判定・エラーでは消す
+function setViewerTitle(text, hover = ''){ const t = document.getElementById('vtitle'); t.textContent = text; t.title = hover; }
 function fillViewer(text, fontSize, isReport){
   const body = document.getElementById('vbody'), md = document.getElementById('vmd');
   body.textContent = text; body.scrollTop = 0; body.style.fontSize = fontSize;

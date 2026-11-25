@@ -1155,3 +1155,24 @@ test('レポートが無い・取得できないときの文言は、プレビ�
     });
   }
 });
+
+// ---------- レポートのタイトル ----------
+
+test('subworkflow のレポートのタイトルは、通ってきた step の名前とファイル名だけにし、省略していないパスは title（hover）に出す', async () => {
+  const page = await renderedPage();
+  const rel = 'subworkflows/iteration-1--step-develop--workflow-development-core--site-6de4953632003b07/subworkflows/iteration-2--step-peer-review--workflow-peer-review--site-2f757f3499165c40/testing-review.md';
+  await page.ctx.openReport(rel);
+  assert.equal(title(page), 'develop › peer-review#2 › testing-review.md');
+  assert.equal(page.document.getElementById('vtitle').title, rel);
+});
+
+test('subworkflow の形でないパスのレポートは、区切りを変えるだけで名前を省略しない。判定を開くと title（hover）は消える', async () => {
+  const page = await renderedPage();
+  assert.equal(page.ctx.reportTitle('plan.md'), 'plan.md');
+  assert.equal(page.ctx.reportTitle('sub/dir/iteration-x--step/plan.md'), 'sub › dir › iteration-x--step › plan.md');
+  await openPlanReport(page);
+  assert.equal(page.document.getElementById('vtitle').title, 'plan.md');
+  page.document.querySelector('#tl .judge[data-ji]').click();
+  assert.equal(title(page), 'plan の判定（iter 1）');
+  assert.equal(page.document.getElementById('vtitle').title, '');
+});
