@@ -43,8 +43,7 @@ function openJudge(r){
   }
   const [it, attempt] = ((r.key||'').split('#')[1] || '').split('@'); // key は step#iter または step#iter@n（n 回目の試行）
   document.getElementById('vtitle').textContent = r.step + ' の判定（iter ' + it + (attempt ? '・' + attempt + ' 回目' : '') + '）';
-  const body = document.getElementById('vbody'); body.textContent = lines.join('\n'); body.scrollTop = 0;
-  body.style.fontSize = '14px'; // 判定の理由は短い文章なのでレポートより大きく
+  fillViewer(lines.join('\n'), '14px'); // 判定の理由は短い文章なのでレポートより大きく
   showViewer();
 }
 // ---------- タイムラインの高さ（下端のバーをドラッグ。localStorage に保存） ----------
@@ -81,6 +80,114 @@ document.addEventListener('mousedown', (e) => {
   document.body.style.cursor = 'row-resize';
   document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
 });
+// ---------- Markdown のプレビュー（レポート） ----------
+// レポート（takt のエージェントが書く Markdown）を HTML にする。依存ライブラリを入れない方針なので、実際のレポートで使われている記法だけを自前で読む:
+// 見出し（#）・段落・箇条書き / 番号リスト（入れ子・チェックボックス）・表・コードブロック（``` / ~~~）・引用・水平線、
+// 行内は `コード`・**太字**・*斜体*・~~取り消し線~~・[リンク](URL)・URL・<br>・\ によるエスケープ。それ以外（画像・脚注・生の HTML など）は文字のまま出す
+// レポートは LLM の出力なので、本文は必ず esc() を通してから組み立てる（生の HTML はタグにしない）。リンクにするのは http: / https: だけ
+const MD_MAX_DEPTH = 16; // 引用・リストの入れ子の上限。これより深い部分は文字のまま出す（> を大量に重ねた入力で再帰が深くなりすぎないように）
+const MD_HOLD = ''; // 変換済みの HTML を置いておく目印（私用領域の文字。入力からは取り除く）
+const MD_FENCE = /^ {0,3}(`{3,}|~{3,})(.*)$/, MD_HEAD = /^ {0,3}(#{1,6})[ \t]+(.*)$/, MD_HR = /^ {0,3}([-*_])(?: *\1){2,} *$/, MD_QUOTE = /^ {0,3}>/;
+const MD_ITEM = /^( *)([-*+]|\d{1,9}[.)])(?: +(.*))?$/, MD_DELIM = /^ *\|? *:?-+:? *(?:\| *:?-+:? *)*\|? *$/;
+const mdIndent = (l) => l.length - l.trimStart().length;
+const mdLink = (url, inner) => '<a href="' + escA(url) + '" target="_blank" rel="noopener noreferrer">' + inner + '</a>';
+// 太字・斜体・取り消し線。esc() 済みの文字列に掛ける。_斜体_ は読まない（snake_case の識別子が斜体になるため。実際のレポートでも使われていない）
+const mdEmph = (h) => h.replace(/\*\*(?=\S)(.*?\S)\*\*/g, '<strong>$1</strong>').replace(/(^|[^*])\*(?=[^\s*])([^*]*?[^\s*])\*(?!\*)/g, '$1<em>$2</em>').replace(/~~(?=\S)([^~]*?\S)~~/g, '<del>$1</del>');
+function mdInline(src){
+  // コード・リンクは、変換した HTML を held に置いて目印に差し替える（中の * や URL を、後の変換がもう一度触らないように）。最後に戻す
+  const held = [];
+  const hold = (html) => MD_HOLD + (held.push(html) - 1) + MD_HOLD;
+  let s = String(src).replaceAll(MD_HOLD, '');
+  // \ によるエスケープと `コード`。左から順に読む（\` はコードを始めず、コードの中の \ はそのまま）
+  s = s.replace(/\\([!-/:-@[-`{-~])|(`+)([^`]|[^`].*?[^`])\2(?!`)/g, (m, ch, tick, code) => hold(ch !== undefined ? esc(ch) : '<code>' + esc(code.replace(/^ (.*[^ ].*) $/, '$1')) + '</code>'));
+  // [文字](URL)。http / https 以外（相対パス・javascript: など）と画像（![…](…)）は文字のまま。URL に目印（コード等）が混ざるものも通さない（属性の中に HTML を戻さない）
+  s = s.replace(/(!?)\[([^\]]+)\]\(([^)\s]+)\)/g, (m, bang, text, url) => bang || !/^https?:\/\//i.test(url) ? m : hold(mdLink(url, mdEmph(esc(text)))));
+  // 文中の URL。URL に使える ASCII の文字だけを取り、末尾の句読点・閉じ括弧は URL に含めない（日本語の文は URL の直後に文字が続くため）
+  s = s.replace(/https?:\/\/[\w\-.~:/?#[\]@!$&'()*+,;=%]+/gi, (m) => {
+    let u = m;
+    while (/[.,;:!?'*]$/.test(u) || (u.endsWith(')') && u.split(')').length > u.split('(').length) || (u.endsWith(']') && u.split(']').length > u.split('[').length)) u = u.slice(0, -1);
+    return /^https?:\/\/./i.test(u) ? hold(mdLink(u, esc(u))) + m.slice(u.length) : m;
+  });
+  // 残りをエスケープしてから装飾する。生の HTML のうち <br> だけは改行にする（表のセルの中の改行に使われている）
+  s = mdEmph(esc(s)).replace(/&lt;br\s*\/?&gt;/gi, '<br>');
+  const restore = (t) => t.replace(/(\d+)/g, (m, i) => restore(held[i]));
+  return restore(s);
+}
+// 表の 1 行をセルに分ける。\| は区切りではなく文字の |（GFM と同じく、コードの中の | も \| と書かれている）
+function mdCells(line){
+  const s = line.trim(), cells = []; let cur = '';
+  for (let k = 0; k < s.length; k++) {
+    if (s[k] === '\\' && s[k + 1] === '|') { cur += '|'; k++; }
+    else if (s[k] === '|') { cells.push(cur); cur = ''; }
+    else cur += s[k];
+  }
+  cells.push(cur);
+  if (cells.length > 1 && cur === '' && s.endsWith('|')) cells.pop(); // 行末の | の後ろ
+  if (s.startsWith('|')) cells.shift(); // 行頭の | の前
+  return cells.map((c) => c.trim());
+}
+// 表の始まり: | を含む行の次が区切り行（|---|:--:|）で、列の数が同じ
+const mdIsTable = (lines, i) => lines[i].includes('|') && i + 1 < lines.length && lines[i + 1].includes('|') && MD_DELIM.test(lines[i + 1]) && mdCells(lines[i]).length === mdCells(lines[i + 1]).length;
+// 段落を終わらせる行。箇条書きの前に空行を入れないレポートが多いので、リストも段落を終わらせる
+const mdStartsBlock = (lines, i) => MD_FENCE.test(lines[i]) || MD_HEAD.test(lines[i]) || MD_HR.test(lines[i]) || MD_QUOTE.test(lines[i]) || MD_ITEM.test(lines[i]) || mdIsTable(lines, i);
+// isTight: 空行の無いリスト項目の中。段落を <p> で包まない（項目ごとに段落の余白が付かないように）
+function mdBlocks(lines, depth, isTight){
+  if (depth > MD_MAX_DEPTH) return '<p>' + lines.map(esc).join('<br>') + '</p>';
+  let out = '', i = 0;
+  while (i < lines.length) {
+    const line = lines[i]; let m;
+    if (!line.trim()) { i++; continue; }
+    // コードブロック。開始と同じ記号が同じ数以上並ぶ行まで（閉じが無ければ最後まで）。中身は開始行の字下げぶんだけ左に寄せる（リストの中のコードブロック）
+    if ((m = MD_FENCE.exec(line)) && !(m[1][0] === '`' && m[2].includes('`'))) {
+      const ind = mdIndent(line), close = new RegExp('^ *' + m[1][0] + '{' + m[1].length + ',} *$'), code = [];
+      for (i++; i < lines.length && !close.test(lines[i]); i++) code.push(lines[i].slice(Math.min(ind, mdIndent(lines[i]))));
+      i++;
+      out += '<pre><code>' + esc(code.join('\n')) + '</code></pre>'; continue;
+    }
+    if ((m = MD_HEAD.exec(line))) { out += '<h' + m[1].length + '>' + mdInline(m[2].replace(/[ \t]+#+[ \t]*$/, '').trim()) + '</h' + m[1].length + '>'; i++; continue; }
+    if (MD_HR.test(line)) { out += '<hr>'; i++; continue; }
+    if (MD_QUOTE.test(line)) {
+      const inner = [];
+      for (; i < lines.length && MD_QUOTE.test(lines[i]); i++) inner.push(lines[i].replace(/^ {0,3}> ?/, ''));
+      out += '<blockquote>' + mdBlocks(inner, depth + 1) + '</blockquote>'; continue;
+    }
+    if (mdIsTable(lines, i)) {
+      const head = mdCells(line), align = mdCells(lines[i + 1]).map((c) => c.startsWith(':') && c.endsWith(':') ? ' class="al-c"' : c.endsWith(':') ? ' class="al-r"' : '');
+      const row = (cells, tag) => '<tr>' + head.map((h, k) => '<' + tag + align[k] + '>' + mdInline(cells[k] ?? '') + '</' + tag + '>').join('') + '</tr>'; // 列の数は見出しに合わせる（足りないセルは空、余りは捨てる）
+      let body = '';
+      for (i += 2; i < lines.length && lines[i].trim() && lines[i].includes('|'); i++) body += row(mdCells(lines[i]), 'td');
+      out += '<div class="md-table"><table><thead>' + row(head, 'th') + '</thead><tbody>' + body + '</tbody></table></div>'; continue;
+    }
+    // リスト。同じ字下げ・同じ種類（- と 1.）の行が項目で、それより字下げの深い行は直前の項目の中身（入れ子のリスト・続きの段落・コードブロック）。
+    // 「1. 」の下を 2 文字だけ下げて書くレポートもあるので、CommonMark より緩く、少しでも深ければ中身とする
+    if ((m = MD_ITEM.exec(line))) {
+      const base = m[1].length, isOl = /\d/.test(m[2]);
+      const isItem = (l) => { const x = MD_ITEM.exec(l); return !!x && x[1].length === base && /\d/.test(x[2]) === isOl && !MD_HR.test(l); };
+      const next = (k) => { while (k < lines.length && !lines[k].trim()) k++; return k; }; // 空行を飛ばした次の行
+      out += isOl ? '<ol' + (parseInt(m[2], 10) === 1 ? '' : ' start="' + parseInt(m[2], 10) + '"') + '>' : '<ul>';
+      while (i < lines.length && isItem(lines[i])) {
+        const x = MD_ITEM.exec(lines[i]), off = base + x[2].length + 1, body = [x[3] ?? ''];
+        for (i++; i < lines.length; i++) {
+          const k = next(i); // 空行は、その先に項目の中身が続くときだけ中身に入れる
+          if (k >= lines.length || mdIndent(lines[k]) <= base) break;
+          body.push(lines[i].slice(Math.min(off, mdIndent(lines[i]))));
+        }
+        const task = /^\[([ xX])\](?: +|$)/.exec(body[0]); if (task) body[0] = body[0].slice(task[0].length);
+        out += (task ? '<li class="task"><input type="checkbox" disabled' + (task[1] === ' ' ? '' : ' checked') + '> ' : '<li>') + mdBlocks(body, depth + 1, !body.some((l) => !l.trim()) || body.length === 1) + '</li>';
+        const k = next(i); if (k < lines.length && isItem(lines[k])) i = k; // 項目の間の空行
+      }
+      out += isOl ? '</ol>' : '</ul>'; continue;
+    }
+    // 段落。行の区切りは改行のまま出す（日本語の文は行をつなぐと余計な空白が入る。生のテキストと行が対応していたほうが見比べやすい）
+    const para = [line.trim()];
+    for (i++; i < lines.length && lines[i].trim() && !mdStartsBlock(lines, i); i++) para.push(lines[i].trim());
+    const html = para.map(mdInline).join('<br>');
+    out += isTight ? html : '<p>' + html + '</p>';
+  }
+  return out;
+}
+// 行頭のタブは 4 文字の字下げとして読む
+function renderMarkdown(text){ return mdBlocks(String(text).split(/\r?\n/).map((l) => l.replace(/^[ \t]+/, (w) => w.replaceAll('\t', '    '))), 0, false); }
 // ---------- 経路表示 ----------
 // タイムラインの行から経路のモデルを作る。通常ステップは箱、並列ステップは枠（中に子の箱）。リトライは同じステップの箱がもう 1 つ並ぶ
 function pathModel(tl, meta){
@@ -152,7 +259,7 @@ function openError(r){
   const lines = [];
   for (const e of r.errors) { lines.push(jst(e.ts) + '  ' + e.phase + ' → ' + e.status); lines.push(e.text); lines.push(''); }
   document.getElementById('vtitle').textContent = r.step + ' のエラー';
-  const body = document.getElementById('vbody'); body.textContent = lines.join('\n'); body.scrollTop = 0; body.style.fontSize = '13px';
+  fillViewer(lines.join('\n'), '13px');
   showViewer();
 }
 function rowHtml(r, i){
@@ -190,7 +297,7 @@ async function openReport(rel){
   // サーバーはレポート・run が無いと 404（本文 not found）、処理の失敗で 500（本文 internal error）を返す。その本文をレポートとして見せない
   const t = !r ? 'レポートを取得できません' : r.status === 404 ? 'レポートが見つかりません' : !r.ok ? 'レポートを取得できません' : r.text;
   document.getElementById('vtitle').textContent = rel;
-  const body = document.getElementById('vbody'); body.textContent = t; body.scrollTop = 0; body.style.fontSize = '';
+  fillViewer(t, '', r && r.ok); // プレビューにするのは取得できたレポートだけ（エラー文は生のまま）
   showViewer();
 }
 // #app の中でフォーカスできる要素（開く要素と、上段の高さを変えるバー）の種類と、それを見分ける属性
@@ -220,6 +327,24 @@ function relocate(o){ return sameAs(o.full, o.attr, o.key, o.area)[o.index] ?? [
 // openReport は fetch を待ってから開くので、待つ間に再描画が走っても困らないよう、クリック・キーの時点で記録する
 // viewerGen は開く操作のたびに増やす（openReport が fetch の後に、自分より後の操作があったかを見るため）
 let viewerOpener = null, viewerGen = 0;
+// モーダルの中身。生のテキストは <pre id="vbody">、レポートの Markdown プレビューは <div id="vmd"> に入れ、見せるほうだけ hidden を外す。
+// 判定・エラー・レポートの取得失敗は Markdown ではないので生だけ（isReport が偽）。そのときは切替ボタンも出さない
+// isReportRaw はユーザーが選んだ表示。モーダルを閉じても、別のレポートを開いても保つ（プレビューが崩れるレポートを続けて生で読めるように）
+let isReportRaw = false, hasPreview = false;
+function fillViewer(text, fontSize, isReport){
+  const body = document.getElementById('vbody'), md = document.getElementById('vmd');
+  body.textContent = text; body.scrollTop = 0; body.style.fontSize = fontSize;
+  let html = null;
+  if (isReport) try { html = renderMarkdown(text); } catch {} // 変換に失敗しても、生のテキストでは読めるようにする
+  hasPreview = html !== null; md.innerHTML = html ?? ''; md.scrollTop = 0;
+  showViewerMode();
+}
+function showViewerMode(){
+  const isPreview = hasPreview && !isReportRaw, btn = document.getElementById('vmode');
+  document.getElementById('vbody').hidden = isPreview; document.getElementById('vmd').hidden = !isPreview;
+  btn.hidden = !hasPreview; btn.textContent = isReportRaw ? 'プレビュー' : '生のテキスト'; // ボタンの文言は、押すと切り替わる先
+}
+document.getElementById('vmode').addEventListener('click', () => { isReportRaw = !isReportRaw; showViewerMode(); });
 function noteOpener(el){ viewerOpener = locate(el); viewerGen++; }
 // showModal で背景を操作できなくし（Tab・クリックとも）、フォーカスを中へ移す。開いたまま別の内容に切り替えるときは呼び直さない
 function showViewer(){ const v = document.getElementById('viewer'); if (!v.open) v.showModal(); }
