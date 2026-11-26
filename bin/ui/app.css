@@ -62,6 +62,44 @@
   #viewer .box { background:#161d18; border:1px solid rgba(233,245,238,.22); border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,.6); width:min(1000px,100%); max-height:100%; display:flex; flex-direction:column; }
   #viewer .head { display:flex; justify-content:space-between; padding:10px 16px; border-bottom:1px solid var(--line); }
   #viewer pre { max-height:none; border:none; border-radius:0 0 10px 10px; flex:1; background:#161d18; }
+  /* レポートの Markdown プレビュー（#vmd.md）と、元のテキストとの切替（#vmode）。切替はタイトルと × の間の右寄せで、2 つのボタンをつなげて並べ、選んでいるほうに色を付ける */
+  #viewer .head #vmode:not([hidden]) { display:flex; margin-left:auto; margin-right:8px; flex:none; align-self:flex-start; }
+  #vmode button { font-size:12px; white-space:nowrap; color:var(--dim); border-radius:0; }
+  #vmode button:first-child { border-radius:6px 0 0 6px; }
+  #vmode button:last-child { border-radius:0 6px 6px 0; margin-left:-1px; }
+  #vmode button[aria-pressed="true"] { color:var(--fg); background:rgba(124,196,232,.16); border-color:var(--acc); position:relative; }
+  #viewer .md { flex:1; min-height:0; overflow:auto; padding:16px 22px 20px; border-radius:0 0 10px 10px; font-size:13.5px; line-height:1.7; overflow-wrap:anywhere; }
+  /* 上の h1 / h2 / table / td / pre は画面の部品用の指定なので、プレビューの中では文書用に上書きする */
+  .md > :first-child { margin-top:0; }
+  .md > :last-child { margin-bottom:0; }
+  .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 { display:block; margin:1.5em 0 .6em; font-weight:600; color:var(--fg); letter-spacing:normal; text-transform:none; white-space:normal; line-height:1.4; }
+  .md h1 { font-size:1.5em; padding-bottom:.3em; border-bottom:1px solid var(--line); }
+  .md h2 { font-size:1.28em; padding-bottom:.25em; border-bottom:1px solid var(--line); }
+  .md h3 { font-size:1.12em; }
+  .md h4, .md h5, .md h6 { font-size:1em; }
+  .md h6 { color:var(--dim); }
+  .md p, .md ul, .md ol, .md blockquote, .md .md-table { margin:0 0 .9em; }
+  .md ul, .md ol { padding-left:1.7em; }
+  .md li { margin:.2em 0; }
+  .md li > ul, .md li > ol, .md li > p { margin:.2em 0; }
+  .md li.task { list-style:none; }
+  /* チェックボックスは操作できない（disabled）ので、ブラウザ既定だと灰色になる。画面の配色に合わせて自前で描く（済みは判定の approved と同じ緑） */
+  .md li.task > input { appearance:none; -webkit-appearance:none; width:14px; height:14px; margin:0 .45em 0 -1.5em; vertical-align:-2px; border:1px solid var(--dim); border-radius:3px; background:transparent; }
+  .md li.task > input:checked { border-color:var(--ok); background:var(--ok) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.4l2.4 2.4 4.6-5.4' fill='none' stroke='%230d110f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/12px no-repeat; }
+  .md a, .md h1 a { color:var(--acc); text-decoration:underline; display:inline; }
+  .md code { font-family:ui-monospace,Menlo,monospace; font-size:.9em; background:rgba(233,245,238,.09); border-radius:4px; padding:.1em .35em; }
+  #viewer .md pre { flex:none; margin:0 0 .9em; border:1px solid var(--line); border-radius:6px; background:#0d110f; }
+  .md pre code { background:none; padding:0; font-size:inherit; }
+  .md blockquote { margin-left:0; margin-right:0; padding:.1em 0 .1em 1em; border-left:3px solid rgba(233,245,238,.22); color:var(--dim); }
+  .md blockquote > :last-child { margin-bottom:0; }
+  .md hr { border:none; border-top:1px solid var(--line); margin:1.5em 0; }
+  .md del { color:var(--dim); }
+  .md .md-table { overflow-x:auto; }
+  .md table { width:auto; font-size:.94em; }
+  .md th, .md td { border:1px solid var(--line); padding:5px 10px; white-space:normal; vertical-align:top; text-align:left; overflow-wrap:break-word; }
+  .md th { background:rgba(233,245,238,.06); font-weight:600; white-space:nowrap; } /* 見出しを折り返さず、短い列が 1 文字幅まで縮まないようにする */
+  .md th.al-c, .md td.al-c { text-align:center; }
+  .md th.al-r, .md td.al-r { text-align:right; }
   .bar { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:10px; }
   .bar div { height:100%; background:var(--run); transition:width .4s; }
   select { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:2px 8px; font-size:12px; }
