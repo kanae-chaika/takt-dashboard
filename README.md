@@ -33,7 +33,7 @@ The UI text is Japanese only for now. This README quotes on-screen text as it ap
 - **Interrupted and failed runs**: a run whose process died and was left as `running` is detected as "中断" (interrupted), and the end row shows which step it stopped at. A failed run shows the reason (such as `rule_no_match`) and the judge's error log.
 - **provider / model**: takt's events do not record the provider for parallel children, so the dashboard takes it from takt's usage_events log when there is one, and otherwise from `~/.takt/runtime.yaml` (or `config.yaml`) as of the run's start (see "Showing the right provider / model for past runs"). The result is saved per run, so changing the yaml later does not change how past runs are shown.
   - Like takt itself, it looks up `targets.steps` → `targets.tags` → `defaults`, in that order. A step's tags come from the step's `tags:` in the workflow yaml, and are also saved per run.
-- **Reports**: the run's `reports/*.md` are listed with the step they belong to. Click one to read it.
+- **Reports**: the run's `reports/*.md` are listed with the step they belong to. Click one to read it. Reports open as a Markdown preview; the "プレビュー" (preview) / "元のテキスト" (original text) buttons switch between the preview and the raw text.
 - Runs from several repositories and worktrees are listed together. The page refreshes every 2 seconds.
 
 ## Usage

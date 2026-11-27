@@ -31,7 +31,7 @@ takt-dashboard                   # 3. 起動
 - **中断・失敗**: プロセスが落ちて `running` のまま残った run を「中断」と判定し、どのステップで止まったかを終了行に出す。失敗は理由（`rule_no_match` など）と judge のエラーログ付き。
 - **provider / model**: 並列の子はイベントに provider が無いので、takt の usage_events のログがあればそこから、無ければ run 開始時点の `~/.takt/runtime.yaml`（または `config.yaml`）から引く（詳しくは「過去の run の provider / model を正しく出すために」）。run ごとに結果を保存するので、後から yaml を変えても過去の表示は変わらない。
   - takt 本体と同じく `targets.steps` → `targets.tags` → `defaults` の順で引く。step の tag は workflow yaml の step の `tags:` から取り、これも run ごとに保存する。
-- **レポート**: run の `reports/*.md` をステップに紐づけて一覧。クリックで本文を表示。
+- **レポート**: run の `reports/*.md` をステップに紐づけて一覧。クリックで本文を表示。本文は Markdown のプレビューで開き、「プレビュー」「元のテキスト」のボタンで元のテキストと切り替えられる。
 - 複数リポジトリ・worktree の run をまとめて一覧。2 秒ごとに自動更新。
 
 ## 使い方
