@@ -783,10 +783,11 @@ function taskForRoot(root, cache) {
   if (!cache.has(root)) cache.set(root, parseTasks(tasksYamlFor(root).text));
   return cache.get(root).find((t) => t.worktree_path && t.worktree_path === root) || null;
 }
-// 一覧は新しい 20 件。表示中の run がそれより古いときは先頭に足す（ドロップダウンに無いと別の run が選ばれて見える）
+// 一覧は新しい 20 件。表示中の run がそれより古いときは末尾に足す（ドロップダウンに無いと別の run が選ばれて見える。
+// 先頭に足すと、最新の run が 2 番目になり、一覧が新しい順に見えなくなる）
 function runList(active, limit, all, taskCache) {
   const top = all.slice(0, limit);
-  if (active && !top.some((r) => r.runDir === active.runDir)) { const me = all.find((r) => r.runDir === active.runDir) ?? active; top.unshift(me); }
+  if (active && !top.some((r) => r.runDir === active.runDir)) { const me = all.find((r) => r.runDir === active.runDir) ?? active; top.push(me); }
   const list = top.map((r) => {
     const t = taskForRoot(r.root, taskCache);
     return { runDir: r.runDir, status: r.meta.status, slug: r.meta.runSlug, step: r.meta.currentStep, startTime: r.meta.startTime, updatedAt: r.meta.updatedAt, label: t ? (t.summary || t.name) : (r.label ?? null) };
