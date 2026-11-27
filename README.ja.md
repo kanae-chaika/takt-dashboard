@@ -1,10 +1,10 @@
 # takt-dashboard
 
+[English README](README.md)
+
 [TAKT](https://github.com/nrslib/takt) の run をブラウザで見張るローカルダッシュボードです。
 依存ライブラリなし（Node.js 標準ライブラリのみ）で動きます。
 TAKT の公式ツールではなく、TAKT プロジェクトとは関係のない非公式のツールです。
-
-[English](README.md)
 
 ![完了した run: plan → write_tests → implement → 並列レビュー → 裁定 → final-gate](docs/screenshot-completed.png)
 
