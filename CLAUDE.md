@@ -36,7 +36,7 @@
 - **並列の子（sub）**: 並列ステップの子。イベントに provider / model が無いので、usage_events のログがあればそこから、無ければ run 開始時点の routing から引く（`ladder` / `pool` / `assignments` / `personas` のように設定から決まらないものは null）
 - 読んでいるイベント種別: `step_start` / `step_complete` / `phase_start` / `phase_complete` / `phase_judge_stage`
 - `logs/` には `type` の無い jsonl（`*-usage-events.jsonl` など）も書かれる。イベントとして読むのは `type` が文字列の記録だけ。`*-usage-events.jsonl`（takt の `logging.usage_events` が有効なときだけ書かれる）は、並列の子の実際の provider / model として別に読む
-- 対応している形式は takt **0.74.0**・**0.75.0**・**0.76.1**・**0.77.0** で確認したもの（0.74.0・0.75.0・0.76.1 は実際の run のログで確認。0.77.0 は mock provider の run だけで、実際の run では未確認。provider の切替の通知文と `runtime.yaml` の `provider:` 配下の書き方は、takt 0.74.0 の mock provider で作った run で確認。0.75.0 の mock provider で作った run（完了・失敗・レート上限による provider の切替）も、0.74.0 と同じ表示になることを確認。0.76.1 と 0.77.0 の mock provider で作った同じ内容の run（完了・失敗・レート上限による provider の切替）は、0.75.0 と `/api/state` のタイムラインが一致することを確認。`takt run` / `takt watch` の run の中断判定は 0.77.0 では未確認）。takt 側の形式は実験的機能で予告なく変わる。形式に依存する箇所を直したときは README の「注意」のバージョンも見直す
+- 対応している形式は takt **0.74.0**・**0.75.0**・**0.76.1**・**0.77.0** で確認したもの（実際の run のログで確認。0.77.0 は完了した run だけ）。takt 側の形式は実験的機能で予告なく変わる。形式に依存する箇所を直したときは README の「注意」のバージョンも見直す
 
 ## 設計方針（変えない）
 

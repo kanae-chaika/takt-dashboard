@@ -127,7 +127,7 @@ The dashboard is read-only. Creating tasks and actions such as PRs and merges ar
 
 ## Caveats
 
-- TAKT's Web UI and run log format are experimental features and change without notice. The dashboard is verified against the logs of real runs made with takt **0.74.0**, **0.75.0** and **0.76.1**. The provider-switch notices (Japanese and English) and the notation under `provider:` in `runtime.yaml` were checked with runs made by takt 0.74.0's mock provider (a test provider that does not call an LLM). Runs made with 0.75.0's mock provider (a completed run, a failed run, and a provider switch on a rate limit) are displayed the same as with 0.74.0. For **0.77.0**, the same runs made with its mock provider are displayed the same as with 0.75.0 and 0.76.1 (not yet checked with real 0.77.0 runs). Keeping up with future takt versions is not promised.
+- TAKT's Web UI and run log format are experimental features and change without notice. The dashboard is verified against the logs of real runs made with takt **0.74.0**, **0.75.0**, **0.76.1** and **0.77.0**. Keeping up with future takt versions is not promised.
 - Run data lives in each worktree's `.takt/runs/`. Deleting a task in `takt list` removes its run from the dashboard too.
 - Local use only (it binds to `localhost` only). There is no authentication.
 - The UI is Japanese only. English is planned.
