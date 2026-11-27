@@ -1,7 +1,7 @@
 # takt-dashboard
 
 [TAKT](https://github.com/nrslib/takt) の run をブラウザで見張るローカル Web ダッシュボード。
-ユーザー向けの説明・使い方は README.md を正とする。ここには開発時に守ることだけ書く。
+ユーザー向けの説明・使い方は README.md（英語）と README.ja.md（日本語）を正とする。ここには開発時に守ることだけ書く。
 
 ## 構成
 
@@ -36,7 +36,7 @@
 - **並列の子（sub）**: 並列ステップの子。イベントに provider / model が無いので、usage_events のログがあればそこから、無ければ run 開始時点の routing から引く（`ladder` / `pool` / `assignments` / `personas` のように設定から決まらないものは null）
 - 読んでいるイベント種別: `step_start` / `step_complete` / `phase_start` / `phase_complete` / `phase_judge_stage`
 - `logs/` には `type` の無い jsonl（`*-usage-events.jsonl` など）も書かれる。イベントとして読むのは `type` が文字列の記録だけ。`*-usage-events.jsonl`（takt の `logging.usage_events` が有効なときだけ書かれる）は、並列の子の実際の provider / model として別に読む
-- 対応している形式は takt **0.74.0** と **0.75.0** で確認したもの（どちらも実際の run のログで確認。provider の切替の通知文と `runtime.yaml` の `provider:` 配下の書き方は、takt 0.74.0 の mock provider で作った run で確認。0.75.0 の mock provider で作った run（完了・失敗・レート上限による provider の切替）も、0.74.0 と同じ表示になることを確認）。takt 側の形式は実験的機能で予告なく変わる。形式に依存する箇所を直したときは README の「注意」のバージョンも見直す
+- 対応している形式は takt **0.74.0**・**0.75.0**・**0.76.1**・**0.77.0** で確認したもの（実際の run のログで確認。0.77.0 は完了した run だけ）。takt 側の形式は実験的機能で予告なく変わる。形式に依存する箇所を直したときは README の「注意」のバージョンも見直す
 
 ## 設計方針（変えない）
 
@@ -75,7 +75,7 @@ npm run lint                 # ESLint（検査のみ）
     - takt は `TAKT_CONFIG_DIR` があれば `~/.takt` の代わりにそこを読む（takt 0.74.0 の `dist/infra/config/paths.js` の `getGlobalConfigDir`）。ダッシュボードは `~/.takt` を読むので、両方を同じ場所にそろえる
     - 環境変数 `TAKT_PROVIDER` / `TAKT_MODEL` は外しておく。設定されていると `runtime.yaml` の割り当てより優先され、step ごとの割り当てもすべてその値になる（takt 0.74.0 の mock の run で確認）
   - 一時の git リポジトリで `takt -w <workflow> -t <タスク> --pipeline --skip-git -q` を実行する。並列の子の確認には組み込みの `compound-eye`（子 `eye1` / `eye2`）が使える
-  - 応答は環境変数 `TAKT_MOCK_SCENARIO` の JSON（`[{ persona, status, content, structured_output }]` の配列）で決める。judge は persona `conductor` で呼ばれる（`compound-eye` で確認）ので、`structured_output: { "step": 1, "reason": "…" }` で rule 1 に一致させる（無いと `rule_no_match` で失敗する）
+  - 応答は環境変数 `TAKT_MOCK_SCENARIO` に渡す JSON ファイルのパス（中身は `[{ persona, status, content, structured_output }]` の配列。takt 0.77.0 で確認。JSON の文字列を直接渡すと `Scenario file not found` になる）で決める。judge は persona `conductor` で呼ばれる（`compound-eye` で確認）ので、`structured_output: { "step": 1, "reason": "…" }` で rule 1 に一致させる（無いと `rule_no_match` で失敗する）
   - provider の切替は、`config.yaml` に `rate_limit_fallback.switch_chain` を書き、シナリオで `status: "rate_limited"` を返すと起きる
 
 ## コードの書き方
@@ -86,7 +86,8 @@ npm run lint                 # ESLint（検査のみ）
 
 ## README
 
-- 日本語と英語（`## English` 以下）の 2 部構成。挙動・オプション・設定ファイルを変えたら**両方**を更新する
+- `README.md`（英語。npm のパッケージページに出る）と `README.ja.md`（日本語）の 2 ファイル。見出し構成は同じにし、冒頭で互いにリンクする。挙動・オプション・設定ファイルを変えたら**両方**を更新する
+- 画面の文言は日本語だけなので、`README.md` では画面の文言をそのまま引用し、英訳を添える
 - 画面の文言を README や Issue / PR に書くときは、`bin/takt-dashboard` の実際の文言を確認してから書く
 
 ## コミット・PR
