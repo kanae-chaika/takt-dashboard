@@ -1,6 +1,6 @@
 # takt-dashboard
 
-🇯🇵 [日本語の README はこちら](README.ja.md)
+**English** | [日本語](README.ja.md)
 
 A local web dashboard for watching [TAKT](https://github.com/nrslib/takt) runs in your browser.
 It has no dependencies (Node.js standard library only).
